@@ -25,10 +25,11 @@ const desktopStyle = computed(() => {
 })
 
 const statusThemeColor = computed(() => {
-  if (showWelcome.value || activeApp.value?.id === 'beautify') return '#f8f7f2'
+  if (showWelcome.value) return '#f8f7f2'
+  if (activeApp.value?.id === 'beautify') return '#ffffff'
   if (activeApp.value?.id === 'chat') return '#f0f0f0'
   if (activeApp.value?.id === 'character') return '#fbfaf8'
-  if (activeApp.value?.id === 'settings') return '#ffffff'
+  if (activeApp.value?.id === 'settings') return '#fafafa'
   return '#ffffff'
 })
 
