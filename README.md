@@ -39,6 +39,23 @@ npm run build
 npm run preview
 ```
 
+## 部署到 Cloudflare Workers
+
+仓库包含 `wrangler.jsonc`，可将 Vite 生成的 `dist/` 静态文件作为 Workers Static Assets 部署，并将单页应用路由回退到 `index.html`。项目根目录执行：
+
+```bash
+npm install
+npm run deploy
+```
+
+`npm run deploy` 会先运行生产构建，再调用 Wrangler 发布。首次部署时按 Wrangler 提示登录 Cloudflare。若在 Cloudflare Dashboard 的 Workers 构建设置中部署，填写：
+
+- **Build command**：`npm run build`
+- **Deploy command**：`npx wrangler deploy`
+- **Root directory**：仓库根目录（留空或 `/`）
+
+不要把 `dist` 填入 Deploy command；它是构建输出目录，Wrangler 会从 `wrangler.jsonc` 中的 `assets.directory` 读取它。
+
 ## 配置 AI 服务
 
 在应用的「设置 → API 配置」中填写服务商提供的 Base URL、API Key 和模型名称，然后保存配置。聊天请求使用 OpenAI 兼容的 `/chat/completions` 接口；模型列表读取使用 `/models`。部分服务商可能要求不同的 URL、请求格式、模型名或浏览器跨域配置。
