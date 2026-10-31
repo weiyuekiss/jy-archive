@@ -48,7 +48,8 @@ const desktopStyle = computed(() => {
     class="desktop"
     :class="{
       'glass-widgets-on': theme.widgetGlass,
-      'glass-icons-on': theme.iconGlass
+      'glass-icons-on': theme.iconGlass,
+      'has-open-app': Boolean(activeApp)
     }"
     :style="desktopStyle"
   >
@@ -85,5 +86,9 @@ const desktopStyle = computed(() => {
   padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
   background: #ffffff;
   transition: background-image 0.3s ease, background-color 0.3s ease;
+}
+
+.desktop.has-open-app {
+  background: #fbfaf8;
 }
 </style>
