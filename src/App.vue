@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import HomeGrid from '@/components/HomeGrid.vue'
 import AppDock from '@/components/AppDock.vue'
 import { dockApps, homeApps } from '@/apps'
@@ -23,6 +23,18 @@ const desktopStyle = computed(() => {
     ...glassVars(theme.glassTint)
   }
 })
+
+const statusThemeColor = computed(() => {
+  if (showWelcome.value || activeApp.value?.id === 'beautify') return '#f8f7f2'
+  if (activeApp.value?.id === 'chat') return '#f0f0f0'
+  if (activeApp.value?.id === 'character') return '#fbfaf8'
+  if (activeApp.value?.id === 'settings') return '#ffffff'
+  return '#ffffff'
+})
+
+watch(statusThemeColor, (color) => {
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute('content', color))
+}, { immediate: true })
 </script>
 
 <template>
