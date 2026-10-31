@@ -150,7 +150,7 @@ function removeCharacter() {
             <div class="sheet-fields">
               <span class="sheet-kicker">A CHARACTER, IN THEIR OWN WORDS</span>
               <label class="field"><span>姓名 <i>NAME</i></span><input v-model="activeCharacter.name" maxlength="48" placeholder="角色姓名" /></label>
-              <label class="field"><span>详细设定 <i>PROFILE</i></span><textarea v-model="activeCharacter.details" maxlength="3000" rows="6" placeholder="记录性格、外貌、经历、说话方式，以及你希望保留的细节……" /><small>{{ activeCharacter.details.length }} / 3000</small></label>
+              <label class="field"><span>详细设定 <i>PROFILE</i></span><textarea v-model="activeCharacter.details" rows="6" placeholder="记录性格、外貌、经历、说话方式，以及你希望保留的细节……" /><small>{{ activeCharacter.details.length }} 字</small></label>
               <div class="field-row">
                 <label class="field"><span>生日 <i>BIRTHDAY</i></span><input v-model="activeCharacter.birthday" type="date" /></label>
                 <label class="field"><span>年龄 <i>AGE</i></span><input v-model="activeCharacter.age" maxlength="24" placeholder="例如：24岁" /></label>

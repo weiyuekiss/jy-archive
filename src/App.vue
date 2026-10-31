@@ -5,12 +5,22 @@ import AppDock from '@/components/AppDock.vue'
 import { dockApps, homeApps } from '@/apps'
 import { activeApp, closeApp } from '@/stores/desktop'
 import { theme, wallpaperCss, iconStyleVars, glassVars } from '@/stores/theme'
+import { checkForAppUpdate, reloadWithLatestVersion, updateAvailable } from '@/pwa'
 
 const showWelcome = ref(true)
 const entering = ref(false)
+const showUpdatePrompt = ref(false)
 let enterTimer
+watch(showWelcome, (visible) => {
+  if (!visible || !updateAvailable.value) return
+  showUpdatePrompt.value = true
+})
+watch(() => updateAvailable.value, (available) => {
+  if (available && showWelcome.value) showUpdatePrompt.value = true
+})
 function enterDesktop() {
-  if (entering.value) return
+  if (entering.value || showUpdatePrompt.value) return
+  checkForAppUpdate()
   entering.value = true
   enterTimer = window.setTimeout(() => { showWelcome.value = false }, 620)
 }
@@ -53,6 +63,14 @@ watch(statusThemeColor, (color) => {
         </button>
         <span class="welcome-enter-label">点击进入</span>
       </div>
+      <div v-if="showUpdatePrompt" class="update-backdrop" role="presentation">
+        <section class="update-dialog" role="alertdialog" aria-modal="true" aria-labelledby="update-title">
+          <span class="welcome-eyebrow">JY · ARCHIVE</span>
+          <h2 id="update-title">发现新版本</h2>
+          <p>更新已准备好，重新加载即可使用最新版应用。</p>
+          <button type="button" class="update-reload" @click="reloadWithLatestVersion">重新加载</button>
+        </section>
+      </div>
       <span class="welcome-footer">YOUR DAYS, KEPT GENTLY</span>
     </section>
   </transition>
@@ -75,7 +93,7 @@ watch(statusThemeColor, (color) => {
 </template>
 
 <style scoped>
-.welcome-screen{position:fixed;inset:0;z-index:200;display:grid;place-items:center;overflow:hidden;color:#373733;background-position:center;background-size:cover;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}.welcome-screen:before{content:"";position:absolute;inset:-24px;background:inherit;filter:blur(22px) saturate(.72);transform:scale(1.08)}.welcome-wash{position:absolute;inset:0;background:linear-gradient(155deg,#f8f7f2 0%,#eeece6 52%,#e5e2d9 100%)}.welcome-content{position:relative;z-index:1;width:min(84vw,390px);display:flex;flex-direction:column;align-items:center;text-align:center;animation:welcome-rise .75s cubic-bezier(.2,.75,.25,1) both}.welcome-eyebrow,.welcome-footer{color:#9d988e;font-size:8px;letter-spacing:.23em}.welcome-mark{width:75px;height:75px;position:relative;display:grid;place-items:center;margin:43px 0 25px;border:1px solid #ffffffd9;border-radius:25px;color:#747366;background:linear-gradient(145deg,#ffffffb8,#f0eee8a8);box-shadow:0 16px 45px #615d4b14;rotate:-5deg}.welcome-mark span{font-family:Georgia,serif;font-size:37px;font-style:italic;letter-spacing:-.12em;translate:-2px 0}.welcome-mark i{width:7px;height:7px;position:absolute;right:16px;top:17px;border-radius:50%;background:#c8a899}.welcome-kicker{margin:0 0 15px;color:#aaa397;font-size:9px;letter-spacing:.22em}.welcome-content h1{margin:0;color:#47463f;font-size:clamp(31px,8vw,40px);font-weight:550;line-height:1.38;letter-spacing:.08em}.welcome-caption{margin:13px 0 35px;color:#98948b;font-size:11px;letter-spacing:.04em}.welcome-enter{width:54px;height:54px;display:grid;place-items:center;border:1px solid #ffffffed;border-radius:50%;color:#55564f;background:#ffffffb8;box-shadow:0 8px 25px #625c4e15;cursor:pointer;animation:enter-breathe 2.2s ease-in-out infinite}.welcome-enter svg{width:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.welcome-enter:active{transform:scale(.92)}.welcome-enter:focus-visible{outline:2px solid #999486;outline-offset:4px}.welcome-enter-label{margin-top:10px;color:#918c82;font-size:10px;letter-spacing:.08em}.welcome-footer{position:absolute;z-index:1;bottom:calc(env(safe-area-inset-bottom) + 24px)}.welcome-screen.entering .welcome-content{animation:welcome-exit .58s cubic-bezier(.55,0,.8,.3) both}.welcome-screen-enter-active,.welcome-screen-leave-active{transition:opacity .62s ease}.welcome-screen-leave-to{opacity:0}@keyframes welcome-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}@keyframes welcome-exit{to{opacity:0;transform:translateY(-22px) scale(.97)}}@keyframes enter-breathe{0%,100%{box-shadow:0 8px 25px #625c4e15}50%{box-shadow:0 8px 30px #625c4e2c}}@media(prefers-reduced-motion:reduce){.welcome-content,.welcome-enter{animation:none!important}.welcome-screen-enter-active,.welcome-screen-leave-active{transition-duration:.01ms}}
+.welcome-screen{position:fixed;inset:0;z-index:200;display:grid;place-items:center;overflow:hidden;color:#373733;background-position:center;background-size:cover;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}.welcome-screen:before{content:"";position:absolute;inset:-24px;background:inherit;filter:blur(22px) saturate(.72);transform:scale(1.08)}.welcome-wash{position:absolute;inset:0;background:linear-gradient(155deg,#f8f7f2 0%,#eeece6 52%,#e5e2d9 100%)}.welcome-content{position:relative;z-index:1;width:min(84vw,390px);display:flex;flex-direction:column;align-items:center;text-align:center;animation:welcome-rise .75s cubic-bezier(.2,.75,.25,1) both}.welcome-eyebrow,.welcome-footer{color:#9d988e;font-size:8px;letter-spacing:.23em}.welcome-mark{width:75px;height:75px;position:relative;display:grid;place-items:center;margin:43px 0 25px;border:1px solid #ffffffd9;border-radius:25px;color:#747366;background:linear-gradient(145deg,#ffffffb8,#f0eee8a8);box-shadow:0 16px 45px #615d4b14;rotate:-5deg}.welcome-mark span{font-family:Georgia,serif;font-size:37px;font-style:italic;letter-spacing:-.12em;translate:-2px 0}.welcome-mark i{width:7px;height:7px;position:absolute;right:16px;top:17px;border-radius:50%;background:#c8a899}.welcome-kicker{margin:0 0 15px;color:#aaa397;font-size:9px;letter-spacing:.22em}.welcome-content h1{margin:0;color:#47463f;font-size:clamp(31px,8vw,40px);font-weight:550;line-height:1.38;letter-spacing:.08em}.welcome-caption{margin:13px 0 35px;color:#98948b;font-size:11px;letter-spacing:.04em}.welcome-enter{width:54px;height:54px;display:grid;place-items:center;border:1px solid #ffffffed;border-radius:50%;color:#55564f;background:#ffffffb8;box-shadow:0 8px 25px #625c4e15;cursor:pointer;animation:enter-breathe 2.2s ease-in-out infinite}.welcome-enter svg{width:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.welcome-enter:active{transform:scale(.92)}.welcome-enter:focus-visible{outline:2px solid #999486;outline-offset:4px}.welcome-enter-label{margin-top:10px;color:#918c82;font-size:10px;letter-spacing:.08em}.welcome-footer{position:absolute;z-index:1;bottom:calc(env(safe-area-inset-bottom) + 24px)}.update-backdrop{position:absolute;inset:0;z-index:3;display:grid;place-items:center;padding:24px;background:#37342d38;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}.update-dialog{width:min(100%,340px);padding:27px 23px 22px;border:1px solid #ffffffd9;border-radius:20px;background:#fbfaf8;box-shadow:0 20px 60px #26231d2c;text-align:center}.update-dialog h2{margin:12px 0 8px;color:#47463f;font-family:Georgia,"PingFang SC",serif;font-size:21px;font-weight:500}.update-dialog p{margin:0 0 19px;color:#89857c;font-size:12px;line-height:1.7}.update-reload{width:100%;height:43px;border:0;border-radius:22px;color:#fff;background:#858477;font-size:13px;cursor:pointer}.welcome-screen.entering .welcome-content{animation:welcome-exit .58s cubic-bezier(.55,0,.8,.3) both}.welcome-screen-enter-active,.welcome-screen-leave-active{transition:opacity .62s ease}.welcome-screen-leave-to{opacity:0}@keyframes welcome-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}@keyframes welcome-exit{to{opacity:0;transform:translateY(-22px) scale(.97)}}@keyframes enter-breathe{0%,100%{box-shadow:0 8px 25px #625c4e15}50%{box-shadow:0 8px 30px #625c4e2c}}@media(prefers-reduced-motion:reduce){.welcome-content,.welcome-enter{animation:none!important}.welcome-screen-enter-active,.welcome-screen-leave-active{transition-duration:.01ms}}
 .app-open-enter-active,
 .app-open-leave-active {
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
