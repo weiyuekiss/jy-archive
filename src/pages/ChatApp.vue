@@ -1139,7 +1139,7 @@ function removeContact(person) {
 @keyframes message-sheet-in{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.message-action-sheet{animation:none}}
 @media(min-width:700px){.acrylic-overlay{align-items:center}}
-.chat-app{background:radial-gradient(ellipse at 82% 8%,#eaf5ffb8 0,transparent 34%),radial-gradient(ellipse at 5% 48%,#f3f1ff85 0,transparent 38%),linear-gradient(155deg,#fff 0%,#fbfdff 48%,#f7faff 100%)}
+.chat-app{background:#fff}
 .chat-content{position:relative}
 .topbar .back-button,.topbar .round-action{width:45px;height:45px;padding:0;border:0;border-radius:0;color:#44464a;background:transparent;box-shadow:none;filter:none;backdrop-filter:none;-webkit-backdrop-filter:none}
 .topbar .back-button:active,.topbar .round-action:active{background:transparent;box-shadow:none;transform:none}
@@ -1154,7 +1154,7 @@ function removeContact(person) {
 .preference-card .preference-row:nth-of-type(3) .preference-icon{color:#d29a45;background:#fff5df}
 .preference-card .preference-row:nth-of-type(4) .preference-icon{color:#7c9bcf;background:#edf4ff}
 .config-page-overlay{position:fixed;inset:0;z-index:40;background:#fff}
-.config-page{width:100%;height:100%;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 12px) 20px calc(env(safe-area-inset-bottom) + 12px);color:#45464a;background:radial-gradient(ellipse at 90% 8%,#eaf5ff91,transparent 34%),linear-gradient(160deg,#fff,#fbfdff 60%,#f8fbff)}
+.config-page{width:100%;height:100%;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 12px) 20px calc(env(safe-area-inset-bottom) + 12px);color:#45464a;background:#fff}
 .config-page-header{width:min(100%,620px);height:52px;flex:none;display:grid;grid-template-columns:42px 1fr 42px;align-items:center;margin:0 auto 14px}
 .config-page-header button{width:40px;height:40px;border:0;color:#555;background:transparent;font-size:30px;cursor:pointer}
 .config-page-header h2{margin:0;text-align:center;font-size:16px;font-weight:500;letter-spacing:.08em}
