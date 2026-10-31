@@ -1,0 +1,28 @@
+/* ========== 桌面布局参数 ========== */
+:root {
+  --cols: 4;                         /* 横向 4 格 */
+  --rows: 6;                         /* 纵向 6 格 */
+  --icon-size: min(15vw, 64px);
+  --icon-radius: 24%;
+  --side-pad: 6vw;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
