@@ -223,7 +223,7 @@ const coupleDays = computed(() => {
         <div v-else class="clean-cover-default" />
       </div>
       <div class="clean-glass-panel" aria-hidden="true" />
-      <div class="clean-avatar" @click.stop="emit('custom-action', { key: 'avatar', title: '更换头像', eyebrow: 'AVATAR' })">
+      <div class="clean-avatar" data-widget-action @click.stop="emit('custom-action', { key: 'avatar', title: '更换头像', eyebrow: 'AVATAR' })">
         <img v-if="data.avatar" :src="data.avatar" alt="头像" draggable="false" />
         <svg v-else viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/></svg>
       </div>
@@ -375,57 +375,42 @@ const coupleDays = computed(() => {
       </div>
     </div>
 
-    <!-- 4×4 主页大卡片（双拼磨砂半透，居中无边框圆形头像） -->
+    <!-- 4×4 主页个人主页卡片 -->
     <div v-else-if="type === 'profile-card'" class="profile-card">
-      <!-- 上半部分封面（可点击设置封面图） -->
-      <div
+      <button
         class="pc-cover"
-        @click.stop="emit('custom-action', { key: 'cover', title: '更换封面图', eyebrow: 'COVER' })"
+        type="button"
+        aria-label="更换主页封面"
+        @click.stop="emit('custom-action', { key: 'cover', title: '更换主页封面', eyebrow: 'COVER' })"
       >
-        <img v-if="data.cover" :src="data.cover" alt="封面图" draggable="false" />
-        <div v-else class="pc-cover-default">
-          <span class="pc-tag">MEMORIES · 2026</span>
-          <span class="pc-live">LIVE</span>
+        <img v-if="data.cover" :src="data.cover" alt="" draggable="false" />
+        <span v-else class="pc-cover-default"><span>MY LITTLE SPACE</span><b>01 / JOURNAL</b></span>
+        <span class="pc-cover-shade" />
+        <span class="pc-cover-edit" aria-hidden="true">更换封面　↗</span>
+      </button>
+
+      <div class="pc-profile">
+        <button
+          class="pc-avatar"
+          type="button"
+          aria-label="更换主页头像"
+          @click.stop="emit('custom-action', { key: 'avatar', title: '更换主页头像', eyebrow: 'AVATAR' })"
+        >
+          <img v-if="data.avatar" :src="data.avatar" alt="" draggable="false" />
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/></svg>
+        </button>
+        <div class="pc-identity">
+          <button class="pc-name" type="button" @click.stop="emit('custom-action', { key: 'name', title: '修改主页名称', eyebrow: 'PROFILE TEXT', kind: 'text' })">{{ data.name || 'Jeanne' }} <span aria-hidden="true">✳</span></button>
+          <button class="pc-quote" type="button" @click.stop="emit('custom-action', { key: 'quote', title: '修改主页签名', eyebrow: 'PROFILE TEXT', kind: 'text' })">{{ data.quote || 'collecting moments, not things ♡' }}</button>
         </div>
-        <div class="pc-cover-shade" />
       </div>
 
-      <!-- 居中无边框圆形头像（悬浮于中央交界，可点击更换头像） -->
-      <div
-        class="pc-avatar-wrap"
-        @click.stop="emit('custom-action', { key: 'avatar', title: '更换圆形头像', eyebrow: 'AVATAR' })"
-      >
-        <div class="pc-avatar">
-          <img v-if="data.avatar" :src="data.avatar" alt="圆形头像" draggable="false" />
-          <div v-else class="pc-avatar-default">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.5" fill="currentColor"/><path d="M3.5 21c0-4.5 4-7.5 8.5-7.5s8.5 3 8.5 7.5" fill="currentColor"/></svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- 下半部分磨砂半透明质感面板 -->
-      <div class="pc-body">
-        <div class="pc-name-line">
-          <span class="pc-name">{{ data.name || 'Jeanne' }}</span>
-          <svg class="pc-badge-icon" viewBox="0 0 24 24"><path d="M12 2l2.4 2.8 3.7-.4 1.3 3.5 3.3 1.8-1 3.6 1.8 3.3-3.1 2.1-.2 3.7-3.7.8-2.2 3-3-2.2-3.7.2-.8-3.7-3.5-1.3 1.8-3.3-3.6-1 2.1-3.1-.4-3.7 3.5-1.3z M10 15.5l6-6-1.4-1.4-4.6 4.6-2.1-2.1-1.4 1.4z" fill="#2b2b2b"/></svg>
-        </div>
-        <p class="pc-quote">“collecting moments, not things ♡”</p>
-        <div class="pc-stats-row">
-          <div class="pc-stat">
-            <b>128</b>
-            <span>POSTS</span>
-          </div>
-          <div class="pc-sep" />
-          <div class="pc-stat">
-            <b>14.2k</b>
-            <span>VIBES</span>
-          </div>
-          <div class="pc-sep" />
-          <div class="pc-stat">
-            <b>21°C</b>
-            <span>SEOUL</span>
-          </div>
-        </div>
+      <div class="pc-stats-row">
+        <button class="pc-stat" type="button" @click.stop="emit('custom-action', { key: 'stat1', title: '修改第一项数据', eyebrow: 'PROFILE TEXT', kind: 'text' })"><b>{{ data.stat1 || '128' }}</b><span>POSTS</span></button>
+        <i aria-hidden="true" />
+        <button class="pc-stat" type="button" @click.stop="emit('custom-action', { key: 'stat2', title: '修改第二项数据', eyebrow: 'PROFILE TEXT', kind: 'text' })"><b>{{ data.stat2 || '14.2k' }}</b><span>VIBES</span></button>
+        <i aria-hidden="true" />
+        <button class="pc-stat" type="button" @click.stop="emit('custom-action', { key: 'stat3', title: '修改第三项数据', eyebrow: 'PROFILE TEXT', kind: 'text' })"><b>{{ data.stat3 || '21°C' }}</b><span>SEOUL</span></button>
       </div>
     </div>
   </div>
@@ -1359,185 +1344,42 @@ const coupleDays = computed(() => {
   margin-top: 4px;
 }
 
-/* 4×4 无文字主页大卡片：构图明确分上下两段，底部使用独立玻璃渐变面板 */
-.profile-card-clean{position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:20px!important;background:#d9d3cb;cursor:default}
+/* 4×4 无文字主页大卡片：白色干净基底，底部保留轻盈磨砂层 */
+.profile-card-clean{position:relative;width:100%;height:100%;overflow:hidden;isolation:isolate;border-radius:20px!important;background:#fff;cursor:default}
 .profile-card-clean .clean-cover,.profile-card-clean .clean-glass-panel{border-radius:inherit}
-.clean-cover{position:absolute;inset:0 0 43%;overflow:hidden;cursor:pointer;background:#b9b6ae}
+.clean-cover{position:absolute;inset:0 0 43%;overflow:hidden;cursor:pointer;background:#fff}
 .clean-cover>img,.clean-cover-default{display:block;width:100%;height:100%;object-fit:cover}
-.clean-cover-default{background:linear-gradient(145deg,#e5ded4 0%,#c7c9c2 48%,#8d9992 100%)}
-.clean-glass-panel{position:absolute;inset:53% 0 0;background:linear-gradient(180deg,rgba(255,255,255,.08) 0%,rgba(250,248,244,.42) 35%,rgba(239,236,230,.78) 100%);border-top:1px solid rgba(255,255,255,.48);backdrop-filter:blur(20px) saturate(145%);-webkit-backdrop-filter:blur(20px) saturate(145%);pointer-events:none}
-.clean-avatar{position:absolute;left:50%;top:53%;width:27%;aspect-ratio:1;transform:translate(-50%,-50%);display:grid;place-items:center;overflow:hidden;border:3px solid rgba(255,255,255,.78);border-radius:50%;background:rgba(255,255,255,.48);color:#8f8b83;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 8px 24px rgba(45,40,34,.2);cursor:pointer}
+.clean-cover-default{background:linear-gradient(145deg,#fff 0%,#fdfdfd 52%,#f7f7f7 100%)}
+.clean-glass-panel{position:absolute;inset:53% 0 0;background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.82) 38%,#fff 100%);border-top:1px solid rgba(255,255,255,.82);backdrop-filter:blur(20px) saturate(145%);-webkit-backdrop-filter:blur(20px) saturate(145%);pointer-events:none}
+.clean-avatar{position:absolute;left:50%;top:53%;width:27%;aspect-ratio:1;transform:translate(-50%,-50%);display:grid;place-items:center;overflow:hidden;border:3px solid rgba(255,255,255,.92);border-radius:50%;background:rgba(255,255,255,.78);color:#8f8b83;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 8px 24px rgba(45,40,34,.12);cursor:pointer}
 .clean-avatar img{width:100%;height:100%;object-fit:cover}
 .clean-avatar svg{width:48%;fill:currentColor}
 @media(prefers-reduced-motion:reduce){.widget.is-flat .disc,.widget.is-flat .disc-wave i{animation:none}}
 
-/* ===== 4×4 主页大卡片（双拼设计 + 居中无边框圆形头像 + 半透磨砂质感） ===== */
-.profile-card {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-}
-/* 上半部分封面图（50%） */
-.pc-cover {
-  width: 100%;
-  height: 50%;
-  position: relative;
-  cursor: pointer;
-  overflow: hidden;
-}
-.pc-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.pc-cover-default {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #dbe4ee 0%, #cbd5e1 50%, #94a3b8 100%);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 12% 10% 0;
-}
-.pc-tag {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(8px);
-  padding: 3px 9px;
-  border-radius: 999px;
-}
-.pc-live {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: #ffffff;
-  background: rgba(239, 68, 68, 0.85);
-  padding: 2px 7px;
-  border-radius: 999px;
-}
-.pc-cover-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.15) 100%);
-  pointer-events: none;
-}
+/* 主页个人卡片：尺寸全部由组件自身布局决定，不依赖容器查询单位 */
+.profile-card{display:grid;grid-template-rows:48% 1fr auto;width:100%;height:100%;overflow:hidden;background:#fff;color:#242424}
+.pc-cover{position:relative;display:block;width:100%;height:100%;overflow:hidden;padding:0;border:0;border-radius:0;background:#e9edf1;text-align:left;cursor:pointer}
+.pc-cover>img{display:block;width:100%;height:100%;object-fit:cover}
+.pc-cover-default{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:space-between;padding:clamp(14px,5%,24px);background:linear-gradient(140deg,#e7edf3 0%,#ccd5df 52%,#aab5c3 100%);color:#fff}
+.pc-cover-default span,.pc-cover-default b{padding:5px 9px;border-radius:20px;background:#47556940;font-size:clamp(8px,2.2vw,11px);font-weight:600;letter-spacing:.09em}
+.pc-cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,#17203308 45%,#17203335 100%);pointer-events:none}
+.pc-cover-edit{position:absolute;right:clamp(12px,4%,20px);bottom:clamp(10px,4%,18px);padding:6px 10px;border:1px solid #ffffff80;border-radius:20px;background:#ffffffbd;color:#3d4652;font-size:10px;opacity:0;transition:opacity .18s}
+.pc-cover:focus-visible .pc-cover-edit,.pc-cover:active .pc-cover-edit{opacity:1}
+.pc-profile{position:relative;display:flex;align-items:center;gap:clamp(12px,4%,20px);min-height:0;padding:clamp(13px,4%,22px) 8% 8%}
+.pc-avatar{flex:none;width:clamp(48px,24%,82px);aspect-ratio:1;display:grid;place-items:center;overflow:hidden;padding:0;border:0;border-radius:50%;background:#f0f2f5;color:#9097a3;box-shadow:0 4px 14px #2222221c;cursor:pointer}
+.pc-avatar img{width:100%;height:100%;object-fit:cover}
+.pc-avatar svg{width:52%;fill:currentColor}
+.pc-identity{display:flex;min-width:0;flex:1;flex-direction:column;align-items:flex-start;gap:6px}
+.pc-name,.pc-quote{max-width:100%;padding:0;border:0;background:transparent;text-align:left;cursor:pointer}
+.pc-name{overflow:hidden;color:#202124;font-size:clamp(14px,4vw,19px);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.pc-name span{font-size:.72em;color:#64748b}
+.pc-quote{display:-webkit-box;overflow:hidden;color:#85878c;font-size:clamp(10px,2.8vw,13px);font-style:italic;line-height:1.45;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.pc-stats-row{display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr;align-items:center;min-height:58px;margin:0 8% clamp(14px,5%,24px);padding-top:10px;border-top:1px solid #2424240d}
+.pc-stats-row>i{width:1px;height:24px;background:#24242412}
+.pc-stat{display:flex;min-width:0;flex-direction:column;align-items:center;gap:4px;padding:4px;border:0;background:transparent;color:inherit;cursor:pointer}
+.pc-stat b{max-width:100%;overflow:hidden;font-size:clamp(12px,3.5vw,16px);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.pc-stat span{color:#9a9ca1;font-size:clamp(8px,2.2vw,10px);letter-spacing:.11em}
+.pc-profile button:focus-visible,.pc-stat:focus-visible,.pc-cover:focus-visible{outline:2px solid #78869a;outline-offset:-3px}
 
-/* 居中位置无边框圆形头像（悬浮于中央交界） */
-.pc-avatar-wrap {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 10;
-  cursor: pointer;
-}
-.pc-avatar {
-  width: 24cqw;
-  height: 24cqw;
-  border-radius: 50%;
-  overflow: hidden;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
-  background: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* 严格遵循用户要求：无边框 */
-  border: none;
-  outline: none;
-}
-.pc-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.pc-avatar-default {
-  width: 100%;
-  height: 100%;
-  background: #f1f3f5;
-  color: #8c92a0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.pc-avatar-default svg {
-  width: 62%;
-  height: 62%;
-}
-
-/* 下半部分半透明磨砂质感面板（50%） */
-.pc-body {
-  width: 100%;
-  height: 50%;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 13cqw 8% 8%;
-  text-align: center;
-  border-top: 1px solid rgba(255, 255, 255, 0.5);
-}
-.pc-name-line {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.pc-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e1e20;
-  letter-spacing: 0.03em;
-}
-.pc-badge-icon {
-  width: 14px;
-  height: 14px;
-}
-.pc-quote {
-  font-size: 11px;
-  color: #72727a;
-  font-style: italic;
-  letter-spacing: 0.02em;
-  margin-top: -2px;
-}
-.pc-stats-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  padding-top: 8px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-}
-.pc-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-}
-.pc-stat b {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e1e22;
-}
-.pc-stat span {
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  color: #9898a0;
-}
-.pc-sep {
-  width: 1px;
-  height: 18px;
-  background: rgba(0, 0, 0, 0.06);
-}
 </style>
 

@@ -1,6 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import WidgetView from '@/components/widgets/WidgetView.vue'
+import PhotoPickerDialog from '@/components/widgets/PhotoPickerDialog.vue'
+import { dockApps } from '@/apps'
 import BeautifyIcon from '@/components/icons/BeautifyIcon.vue'
 import { WIDGET_SIZES, widgetCatalog } from '@/widgets'
 import { addWidget } from '@/stores/desktop'
@@ -12,7 +14,8 @@ import {
   wallpaperCss,
   iconStyleVars,
   glassVars,
-  applyTheme
+  applyTheme,
+  compressImageFile
 } from '@/stores/theme'
 
 const emit = defineEmits(['close'])
@@ -23,6 +26,47 @@ const tabs = [
 ]
 const activeTab = ref('widgets')
 const activeSize = ref(WIDGET_SIZES[0].key)
+const iconDialog = ref(null)
+const iconUrl = ref('')
+const iconError = ref('')
+const iconFileInput = ref(null)
+const customIconDraft = ref({ ...theme.customIcons })
+const appIconTargets = computed(() => dockApps.filter((app) => ['beautify', 'chat', 'character', 'settings'].includes(app.id)))
+const appIconPreviewStyle = (appId) => customIconDraft.value[appId] ? { backgroundImage: `url(${JSON.stringify(customIconDraft.value[appId])})` } : null
+
+function openIconDialog(app) {
+  iconDialog.value = app
+  iconUrl.value = theme.customIcons?.[app.id]?.startsWith('http') ? theme.customIcons[app.id] : ''
+  iconError.value = ''
+}
+
+async function onIconFile(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file) return
+  try {
+    customIconDraft.value[iconDialog.value.id] = await compressImageFile(file, 512, 0.86)
+    iconDialog.value = null
+  } catch {
+    iconError.value = '图片读取失败，请选择其他图片'
+  }
+}
+
+function saveIconUrl() {
+  try {
+    const url = new URL(iconUrl.value.trim())
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol')
+    customIconDraft.value[iconDialog.value.id] = url.href
+    iconDialog.value = null
+  } catch {
+    iconError.value = '请输入有效的 http 或 https 图片链接'
+  }
+}
+
+function clearIcon() {
+  delete customIconDraft.value[iconDialog.value.id]
+  iconDialog.value = null
+}
 
 const currentSize = computed(() => WIDGET_SIZES.find((s) => s.key === activeSize.value))
 const list = computed(() =>
@@ -55,7 +99,8 @@ const isApplied = computed(
     draft.value.customImage === theme.customImage &&
     draft.value.widgetGlass === theme.widgetGlass &&
     draft.value.iconGlass === theme.iconGlass &&
-    draft.value.glassTint === theme.glassTint
+    draft.value.glassTint === theme.glassTint &&
+    JSON.stringify(customIconDraft.value) === JSON.stringify(theme.customIcons || {})
 )
 
 function toggleWidgetGlass() {
@@ -116,7 +161,7 @@ function onUpload(e) {
 }
 
 function onApply() {
-  applyTheme({ ...draft.value })
+  applyTheme({ ...draft.value, customIcons: { ...customIconDraft.value } })
   showToast('已应用到桌面')
 }
 
@@ -336,11 +381,35 @@ function showToast(text) {
         </div>
       </div>
 
+      <div class="group">
+        <h2>应用图标</h2>
+        <p class="icon-help">为美化、聊天、人物、设置分别选择相册图片或图片链接</p>
+        <div class="app-icon-grid">
+          <button v-for="app in appIconTargets" :key="app.id" class="app-icon-option" @click="openIconDialog(app)">
+            <span class="app-icon-preview" :style="appIconPreviewStyle(app.id)">
+              <component :is="app.icon" v-if="!customIconDraft[app.id]" />
+            </span>
+            <span>{{ app.name }}</span>
+            <small>点击更换</small>
+          </button>
+        </div>
+      </div>
+
       <button class="apply" :disabled="isApplied" @click="onApply">
         {{ isApplied ? '当前使用中' : '应用到桌面' }}
       </button>
     </section>
 
+    <div v-if="iconDialog" class="icon-dialog-mask" @click.self="iconDialog = null">
+      <section class="icon-dialog" role="dialog" aria-modal="true" :aria-label="`更换${iconDialog.name}图标`">
+        <header><div><small>APP ICON</small><h2>更换{{ iconDialog.name }}图标</h2></div><button aria-label="关闭" @click="iconDialog = null">×</button></header>
+        <button class="album-pick" @click="iconFileInput?.click()">从手机相册选择图片</button>
+        <input ref="iconFileInput" type="file" accept="image/*" hidden @change="onIconFile" />
+        <div class="url-row"><input v-model="iconUrl" type="url" inputmode="url" placeholder="https://example.com/icon.jpg" /><button @click="saveIconUrl">使用链接</button></div>
+        <p v-if="iconError" class="icon-error" role="alert">{{ iconError }}</p>
+        <footer><button class="clear-icon" @click="clearIcon">恢复默认图标</button><button @click="iconDialog = null">取消</button></footer>
+      </section>
+    </div>
     <transition name="fade">
       <div v-if="toast" class="toast" role="status">{{ toast }}</div>
     </transition>
@@ -890,6 +959,27 @@ function showToast(text) {
   opacity: 0;
   transform: translateY(-6px);
 }
+
+.icon-help { margin: -4px 0 12px; color: #999; font-size: 12px; line-height: 1.45; }
+.app-icon-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.app-icon-option { min-width: 0; display: grid; justify-items: center; gap: 6px; padding: 14px 8px; border: 1px solid #eee; border-radius: 16px; background: #fff; color: #555; font: inherit; font-size: 13px; cursor: pointer; }
+.app-icon-preview { width: 48px; height: 48px; display: grid; place-items: center; overflow: hidden; border-radius: 24%; background-position: center; background-size: cover; box-shadow: 0 4px 14px rgba(40,40,50,.08); }
+.app-icon-preview :deep(svg) { width: 100%; height: 100%; }
+.app-icon-option small { color: #aaa; font-size: 11px; }
+.icon-dialog-mask { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(30,30,34,.28); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.icon-dialog { width: min(100%, 420px); padding: 22px 18px 16px; border: 1px solid #eee; border-radius: 24px; background: #fff; box-shadow: 0 18px 50px rgba(0,0,0,.16); }
+.icon-dialog header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+.icon-dialog header small { color: #aaa; font-size: 10px; letter-spacing: .18em; }
+.icon-dialog header h2 { margin-top: 4px; color: #333; font-size: 18px; font-weight: 500; }
+.icon-dialog header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f5f5f5; color: #666; font-size: 24px; line-height: 1; }
+.album-pick { width: 100%; min-height: 48px; border: 1px solid #e7e7e7; border-radius: 14px; background: #f9f9f9; color: #333; font-size: 14px; }
+.url-row { display: flex; gap: 8px; margin-top: 12px; }
+.url-row input { flex: 1; min-width: 0; height: 46px; padding: 0 12px; border: 1px solid #e5e5e5; border-radius: 12px; color: #333; font-size: 16px; }
+.url-row button, .icon-dialog footer button { flex: none; padding: 0 14px; border: 0; border-radius: 12px; background: #303036; color: #fff; font-size: 13px; }
+.icon-error { margin-top: 9px; color: #b44; font-size: 12px; }
+.icon-dialog footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 18px; }
+.icon-dialog footer button { min-height: 40px; }
+.icon-dialog footer .clear-icon { background: #f2f2f2; color: #666; }
 
 .apply {
   width: 100%;

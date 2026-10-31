@@ -55,6 +55,9 @@ let pending = null
 let tapCandidate = false
 
 function onPointerDown(e, w) {
+  // Interactive widget controls need their own pointer/click sequence; capturing
+  // the pointer on the slot retargets touch events away from those controls.
+  if (e.target.closest('button, a, input, textarea, select, [data-widget-action]')) return
   e.currentTarget.setPointerCapture(e.pointerId)
   pending = { w, x: e.clientX, y: e.clientY }
   tapCandidate = !editing.value
@@ -120,12 +123,12 @@ function onWidgetTap(w) {
     photoDialog.value = { w, field: 'cover', title: '更换封面图', eyebrow: 'COVER' }
   }
 }
-function onWidgetCustomAction(w, { key, title, eyebrow }) {
+function onWidgetCustomAction(w, { key, title, eyebrow, kind }) {
   if (key === 'startDate') {
     photoDialog.value = { w, field: key, title: title || '设置在一起的日期', eyebrow: eyebrow || 'OUR DAY', kind: 'date' }
     return
   }
-  photoDialog.value = { w, field: key, title: title || '设置图片', eyebrow: eyebrow || 'IMAGE' }
+  photoDialog.value = { w, field: key, title: title || '设置图片', eyebrow: eyebrow || 'IMAGE', kind: kind || 'image' }
 }
 function savePhoto(val) {
   if (photoDialog.value) {

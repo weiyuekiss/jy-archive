@@ -6,18 +6,18 @@ import { loadWidgets, saveWidgets } from './db'
 // [{ uid, type, x, y, w, h, data }]，x / y 从 0 开始
 export const desktopWidgets = reactive([])
 
-// 初始化：从 IndexedDB 加载
+let saveTimer = null
+let loadedWidgets = false
 loadWidgets().then((list) => {
   desktopWidgets.splice(0, desktopWidgets.length, ...list)
+  loadedWidgets = true
 })
-
-// 监听变化并自动保存到 IndexedDB
-let saveTimer = null
 watch(
   desktopWidgets,
   () => {
+    if (!loadedWidgets) return
     clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => saveWidgets([...desktopWidgets]), 300)
+    saveTimer = setTimeout(() => saveWidgets(desktopWidgets), 300)
   },
   { deep: true }
 )

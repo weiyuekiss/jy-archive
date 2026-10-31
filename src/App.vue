@@ -112,7 +112,7 @@ watch(statusThemeColor, (color) => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: 100vh;
   padding-top: calc(env(safe-area-inset-top) + 5vh);
   padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
   background: #ffffff;

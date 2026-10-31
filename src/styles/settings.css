@@ -1,11 +1,17 @@
 /* JyOS settings — muted Korean Instagram-inspired profile */
 .settings-app {
   --ink:#363530; --muted:#99968e; --line:#eeece7; --paper:#fff; --wash:#f7f6f3; --accent:#a7a696;
-  position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; overflow:hidden;
+  position:fixed; inset:0; width:100%; height:100vh; z-index:20; display:flex; flex-direction:column; overflow:hidden;
   padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); background:var(--paper); color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif; letter-spacing:.01em;
 }
 .settings-app button,.settings-app input{font:inherit}
+@supports (height: 100dvh) {
+  .settings-app { height: 100dvh; }
+}
+@supports (-webkit-touch-callout: none) {
+  .settings-app { height: 100vh; }
+}
 .app-header{flex:none;min-height:56px;display:grid;grid-template-columns:42px 1fr 42px;align-items:center;padding:0 19px;background:#fff;border-bottom:1px solid var(--line)}
 .back-btn{width:36px;height:36px;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;cursor:pointer}
 .back-btn:hover,.back-btn:active{background:var(--wash)}
@@ -20,7 +26,7 @@
 .cover-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(52,50,45,.12),transparent 52%,rgba(52,50,45,.12));pointer-events:none}
 .cover-topline{position:absolute;top:18px;left:21px;right:21px;display:flex;justify-content:space-between;color:rgba(65,63,57,.72);font-size:9px;font-weight:600;letter-spacing:.2em}
 .cover-edit{position:absolute;right:17px;bottom:15px;padding:7px 11px;border:1px solid rgba(255,255,255,.7);border-radius:20px;color:#55534d;background:rgba(255,255,255,.78);font-size:10px;letter-spacing:.04em;cursor:pointer;backdrop-filter:blur(8px)}
-.profile-card{padding:0 23px 22px;background:#fff}
+.settings-app .profile-card{padding:0 23px 22px;background:#fff}
 .profile-identity{display:flex;align-items:flex-end;gap:16px;margin-top:-42px;position:relative}
 .avatar-btn{flex:none;width:88px;height:88px;padding:4px;border:1px solid #e9e6df;border-radius:50%;background:#fff;display:grid;place-items:center;cursor:pointer}
 .avatar-img,.avatar-placeholder{width:100%;height:100%;border-radius:50%}.avatar-img{object-fit:cover}.avatar-placeholder{display:grid;place-items:center;background:#f2f1ed}
@@ -45,7 +51,7 @@
 .field-item{margin-top:16px}.field-label{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:7px;color:#77736b;font-size:11px}.input-wrap{display:flex;align-items:center;min-height:39px;border:1px solid #e9e6df;border-radius:8px;background:#fff}.input-wrap:focus-within{border-color:#c8c3b7}.k-input,.search-mini-input{width:100%;min-width:0;padding:10px 11px;border:0;outline:0;color:#494740;background:transparent;font-size:12px}.k-input::placeholder,.search-mini-input::placeholder{color:#c0bcb3}.k-input.bold{font-weight:600}.has-suffix{padding-right:8px}.suffix-toggle{border:0;color:#99958c;background:transparent;font-size:10px;cursor:pointer}.quick-tags{align-items:center;margin-top:9px}.quick-hint,.sub-tip{color:#aaa69d;font-size:10px}.tag-pill{padding:5px 8px;font-size:10px}.model-select-row{display:flex;gap:8px}.k-primary-btn.compact{flex:none;min-height:38px}.models-box{margin-top:15px;padding:13px;border-radius:10px;background:#f9f8f5}.box-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:11px}.box-title{display:flex;flex-direction:column;gap:4px;color:#747168;font-size:11px}.box-title small{color:#aaa69d;font-size:10px}.search-mini-input{width:min(100%,180px);padding:8px 10px;border:1px solid #ebe8e1;border-radius:7px;background:#fff}.model-chip{padding:7px 9px;font-size:10px}.check-mark{color:#838477}.empty-model-tip{color:#aaa69d;font-size:11px}.temp-status-text{color:#99958c;font-size:10px}.temp-badge{color:#67665d;font-variant-numeric:tabular-nums}.slider-container{padding:4px 2px 0}.k-slider{width:100%;accent-color:#929285}.slider-marks{display:flex;justify-content:space-between;gap:5px;margin-top:8px;color:#aaa69d;font-size:9px}
 .edit-modal-backdrop{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:22px;background:rgba(44,42,37,.28);backdrop-filter:blur(5px)}.edit-modal{position:relative;width:min(100%,360px);padding:30px 25px 23px;border:1px solid rgba(255,255,255,.8);border-radius:18px;background:#fff;box-shadow:0 22px 70px rgba(38,35,29,.18);text-align:center}.modal-close{position:absolute;top:12px;right:14px;width:28px;height:28px;border:0;border-radius:50%;color:#96928a;background:#f6f5f2;font-size:20px;line-height:1;cursor:pointer}.edit-modal h2{margin:10px 0 7px;color:#3d3b36;font-family:Georgia,"PingFang SC",serif;font-size:21px;font-weight:500}.edit-modal p{margin:0 0 18px;color:#99958c;font-size:11px}.name-input{width:100%;height:42px;padding:0 12px;border:1px solid #e8e4dd;border-radius:8px;outline:none;color:var(--ink);background:#fff;font-size:12px}.name-input:focus{border-color:#c9c3b8}.modal-actions{display:flex;gap:9px;margin-top:16px}.save-btn,.cancel-btn{flex:1;height:37px;border:0;border-radius:8px;font-size:11px;cursor:pointer}.save-btn{color:#fff;background:#858477}.cancel-btn{color:#77736c;background:#f3f1ed}.avatar-upload-btn{width:100%;height:40px;border:0;border-radius:8px;color:#fff;background:#858477;font-size:12px;cursor:pointer}.modal-cancel-link{margin-top:13px;border:0;color:#99958c;background:transparent;font-size:10px;cursor:pointer}.modal-fade-enter-active,.modal-fade-leave-active{transition:opacity .2s ease}.modal-fade-enter-from,.modal-fade-leave-to{opacity:0}
 .toast{position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:9px;padding:11px 17px;border:1px solid #eeebe5;border-radius:24px;color:#55534d;background:rgba(255,255,255,.96);box-shadow:0 8px 28px rgba(49,43,32,.09);font-size:12px;white-space:nowrap}.toast-dot{width:6px;height:6px;border-radius:50%;background:#a9aa98}.toast-fade-enter-active,.toast-fade-leave-active{transition:opacity .2s ease,transform .2s ease}.toast-fade-enter-from,.toast-fade-leave-to{opacity:0;transform:translate(-50%,8px)}
-@media(max-width:420px){.profile-cover{height:205px}.profile-card{padding-right:19px;padding-left:19px}.tab-page{padding:15px 14px 36px}.k-card{padding:15px}.slider-marks{font-size:8px}}
+@media(max-width:420px){.profile-cover{height:205px}.settings-app .profile-card{padding-right:19px;padding-left:19px}.tab-page{padding:15px 14px 36px}.k-card{padding:15px}.slider-marks{font-size:8px}}
 
 /* API settings: an editorial profile-like canvas, with controls grouped by whitespace. */
 .api-settings-page{width:min(100%,660px);padding:29px 30px 64px;gap:34px;background:#fff}

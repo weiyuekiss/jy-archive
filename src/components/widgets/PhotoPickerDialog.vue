@@ -7,12 +7,14 @@ const props = defineProps({
   modelValue: { type: String, default: '' },
   title: { type: String, default: '设置照片' },
   eyebrow: { type: String, default: 'CUSTOMIZE' },
-  kind: { type: String, default: 'image' }
+  kind: { type: String, default: 'image' },
+  placeholder: { type: String, default: '输入主页文案' }
 })
 const emit = defineEmits(['save', 'close'])
 
 const tab = ref('album') // 'album' | 'url'
 const dateInput = ref(/^\\d{4}-\\d{2}-\\d{2}$/.test(props.modelValue) ? props.modelValue : '')
+const textInput = ref(props.modelValue)
 const urlInput = ref(props.modelValue.startsWith('http') ? props.modelValue : '')
 const albumImage = ref(props.modelValue.startsWith('data:') ? props.modelValue : '')
 const loading = ref(false)
@@ -31,7 +33,7 @@ const validUrl = computed(() => {
 })
 
 const preview = computed(() => (tab.value === 'url' ? validUrl.value : albumImage.value))
-const canSave = computed(() => props.kind === 'date' ? !!dateInput.value : !!preview.value && !previewFailed.value && !loading.value)
+const canSave = computed(() => props.kind === 'date' ? !!dateInput.value : props.kind === 'text' ? !!textInput.value.trim() : !!preview.value && !previewFailed.value && !loading.value)
 
 watch([tab, validUrl], () => {
   previewFailed.value = false
@@ -97,6 +99,10 @@ function save() {
     if (canSave.value) emit('save', dateInput.value)
     return
   }
+  if (props.kind === 'text') {
+    if (canSave.value) emit('save', textInput.value.trim())
+    return
+  }
   if (canSave.value) emit('save', preview.value)
 }
 function clearPhoto() {
@@ -124,7 +130,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
         <!-- 预览：拍立得小样 -->
         <div class="preview-card">
-          <div v-if="props.kind === 'date'" class="preview-date">已经在一起 {{ dateInput ? Math.max(0, Math.floor((new Date().setHours(0,0,0,0) - new Date(`${dateInput}T00:00:00`)) / 86400000) + 1) : 0 }} 天</div>
+        <div v-if="props.kind === 'date'" class="preview-date">已经在一起 {{ dateInput ? Math.max(0, Math.floor((new Date().setHours(0,0,0,0) - new Date(`${dateInput}T00:00:00`)) / 86400000) + 1) : 0 }} 天</div>
+          <div v-else-if="props.kind === 'text'" class="preview-text">{{ textInput || '输入主页文案' }}</div>
           <div v-else class="preview-photo">
             <img v-if="preview && !previewFailed" :src="preview" alt="照片预览" @error="onPreviewError" />
             <span v-else-if="loading" class="hint">读取中…</span>
@@ -137,6 +144,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <label class="field">
             <span class="sr-only">在一起的日期</span>
             <input v-model="dateInput" type="date" :max="new Date().toISOString().slice(0, 10)" />
+          </label>
+        </div>
+        <div v-else-if="props.kind === 'text'" class="pane">
+          <label class="field">
+            <span class="sr-only">主页文案</span>
+            <textarea v-model="textInput" rows="3" maxlength="160" :placeholder="props.placeholder" @keydown.ctrl.enter="save" @keydown.meta.enter="save" />
           </label>
         </div>
 
@@ -261,6 +274,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   rotate: -2deg;
 }
 .preview-date{padding:28px 8px;text-align:center;color:#6f6861;font-size:14px}
+.preview-text{padding:18px 10px;min-height:86px;display:grid;place-items:center;text-align:center;overflow-wrap:anywhere;color:#6f6861;font-size:14px;line-height:1.5}
 .preview-photo {
   aspect-ratio: 1;
   border-radius: 3px;
@@ -348,10 +362,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   outline: none;
   transition: border-color 0.2s;
 }
-.field input::placeholder {
+.field textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 12px 16px;
+  resize: vertical;
+  border: 1px solid #e8e3dc;
+  border-radius: 16px;
+  background: #fff;
+  color: #4a4541;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.45;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.field input::placeholder, .field textarea::placeholder {
   color: #c2bab1;
 }
-.field input:focus {
+.field input:focus, .field textarea:focus {
   border-color: #c9bfb3;
 }
 
@@ -392,7 +422,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   cursor: not-allowed;
 }
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid #c9bfb3;
   outline-offset: 2px;
 }
