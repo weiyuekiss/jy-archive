@@ -4,34 +4,35 @@ import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
+  base: '/jy-archive/',
   plugins: [
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        id: '/',
+        id: '/jy-archive/',
         name: 'JY Archive',
         short_name: 'JY Archive',
         description: '把日常，慢慢收进来。',
         lang: 'zh-CN',
-        start_url: '/',
-        scope: '/',
+        start_url: '/jy-archive/',
+        scope: '/jy-archive/',
         display: 'standalone',
         orientation: 'portrait',
         theme_color: '#ffffff',
         background_color: '#f8f7f2',
         icons: [
-          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: '/jy-archive/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/jy-archive/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/jy-archive/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/chat\/completions(?:\/|$)/],
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
-        additionalManifestEntries: [{ url: '/offline.html', revision: null }],
+        additionalManifestEntries: [{ url: 'offline.html', revision: null }],
         navigateFallbackAllowlist: [/^(?!\/chat\/completions(?:\/|$)).*/],
         runtimeCaching: [
           {
