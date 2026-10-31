@@ -857,7 +857,7 @@ function removeContact(person) {
 
     <main class="chat-content">
       <template v-if="currentTab === '聊天'">
-        <div class="welcome"><span class="welcome-avatar" :style="userProfile.avatar ? { backgroundImage: `url(${userProfile.avatar})` } : {}"><span v-if="!userProfile.avatar">{{ (userProfile.name || '我').slice(0, 1) }}</span></span><strong>{{ userProfile.name || '我的空间' }}</strong></div>
+        <div class="welcome"><strong>{{ userProfile.name || '我的空间' }}</strong></div>
         <label v-if="searchOpen" class="search-field"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input v-model="query" autofocus placeholder="搜索对话"/><button v-if="query" aria-label="清除搜索" @click="query = ''">×</button></label>
         <section v-for="section in filteredSections" :key="section.title" class="chat-section">
           <button class="section-toggle" type="button" :aria-expanded="section.open" @click="sections.find((item) => item.title === section.title).open = !section.open"><svg class="chevron" :class="{ folded: !sections.find((item) => item.title === section.title).open }" viewBox="0 0 20 20"><path d="m5 7 5 5 5-5"/></svg><span>{{ section.title }}</span><small>{{ section.chats.length }}</small><svg class="section-end" viewBox="0 0 20 20"><path d="m7 5 5 5-5 5"/></svg></button>
