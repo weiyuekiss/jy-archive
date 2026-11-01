@@ -28,25 +28,13 @@ body,
   touch-action: manipulation;
 }
 
-@supports (height: 100dvh) {
-  html,
-  body,
-  #app {
-    height: 100dvh;
-    min-height: 100dvh;
-  }
-}
-
 @supports (-webkit-touch-callout: none) {
   html,
   body,
-  #app {
-    height: 100vh;
-    min-height: 100vh;
-  }
-
+  #app,
   .desktop {
     height: 100vh;
+    min-height: 100vh;
   }
 }
 

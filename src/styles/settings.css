@@ -6,9 +6,6 @@
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif; letter-spacing:.01em;
 }
 .settings-app button,.settings-app input{font:inherit}
-@supports (height: 100dvh) {
-  .settings-app { height: 100dvh; }
-}
 @supports (-webkit-touch-callout: none) {
   .settings-app { height: 100vh; }
 }
