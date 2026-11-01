@@ -1,36 +1,39 @@
 import { registerSW } from 'virtual:pwa-register'
 
-const UPDATE_CHECK_KEY = 'jy-os-last-update-check'
-const UPDATE_CHECK_INTERVAL = 60 * 1000
-
 export const updateAvailable = { value: false }
 
 let updateServiceWorker
-let updatePromptShown = false
-
-function requestUpdateCheck() {
-  const now = Date.now()
-  const lastCheck = Number(localStorage.getItem(UPDATE_CHECK_KEY) || 0)
-  if (now - lastCheck < UPDATE_CHECK_INTERVAL) return
-
-  localStorage.setItem(UPDATE_CHECK_KEY, String(now))
-  updateServiceWorker?.(true)
-}
+let updateCheckPromise
+let reloadRequested = false
 
 export function checkForAppUpdate() {
-  requestUpdateCheck()
+  if (updateCheckPromise) return updateCheckPromise
+  if (!updateServiceWorker) return Promise.resolve(false)
+
+  // false 检查并通知新版本，但不跳过等待/自动刷新，保留用户确认按钮。
+  updateCheckPromise = updateServiceWorker(false)
+    .then(() => true)
+    .catch((error) => {
+      console.error('检查应用更新失败：', error)
+      return false
+    })
+    .finally(() => { updateCheckPromise = undefined })
+  return updateCheckPromise
 }
 
 export async function reloadWithLatestVersion() {
-  if (!updateServiceWorker) {
-    window.location.reload()
-    return
-  }
-
+  if (reloadRequested) return
+  reloadRequested = true
   try {
-    await updateServiceWorker(true)
+    // vite-plugin-pwa 的回调会等待新 Service Worker 激活后再返回。
+    await updateServiceWorker?.(true)
+  } catch (error) {
+    console.error('应用更新失败，将尝试重新加载：', error)
   } finally {
-    window.location.reload()
+    // 添加版本查询参数，避免手机浏览器或中间缓存继续返回旧入口 HTML。
+    const url = new URL(window.location.href)
+    url.searchParams.set('_app_reload', String(Date.now()))
+    window.location.replace(url.toString())
   }
 }
 
@@ -42,11 +45,10 @@ if ('serviceWorker' in navigator) {
     },
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return
-
-      requestUpdateCheck()
-      window.addEventListener('online', requestUpdateCheck)
+      const check = () => { void checkForAppUpdate() }
+      window.addEventListener('online', check)
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') requestUpdateCheck()
+        if (document.visibilityState === 'visible') check()
       })
     },
     onRegisterError(error) {
