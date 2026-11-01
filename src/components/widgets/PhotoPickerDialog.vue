@@ -206,8 +206,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(60, 56, 52, 0.18);
-  backdrop-filter: blur(6px);
+  background: rgba(70, 74, 68, 0.14);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
   animation: fade 0.2s ease;
 }
 .sheet {
@@ -215,11 +216,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   max-width: 420px;
   margin: 0 12px 16px;
   padding: 22px 20px 18px;
+  border: 0;
   border-radius: 28px;
-  background: #fbfaf8;
-  border: 1px solid #efebe6;
-  box-shadow: 0 20px 50px rgba(80, 70, 60, 0.12);
-  color: #57524d;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 42px rgba(45, 55, 46, 0.12), inset 0 1px 0 rgba(255,255,255,.9);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  color: #575b56;
   animation: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (min-height: 640px) {
@@ -331,22 +334,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .pick {
   width: 100%;
-  height: 48px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1.5px dashed #dcd5cc;
-  border-radius: 16px;
-  background: #fff;
-  color: #6f6861;
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #ffffff, #f7faf7);
+  box-shadow: 0 5px 14px rgba(54, 72, 57, 0.07), inset 0 1px 0 #fff;
+  color: #5c665d;
   font-size: 14px;
   cursor: pointer;
+  transition: transform .18s, box-shadow .18s;
 }
+.pick:active { transform: scale(.985); box-shadow: 0 2px 7px rgba(54,72,57,.06); }
 .pick svg {
   width: 18px;
   fill: none;
-  stroke: #a59c92;
+  stroke: #829888;
   stroke-width: 1.5;
   stroke-linejoin: round;
 }
@@ -414,11 +420,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .primary {
   border: none;
-  background: #5c5650;
-  color: #fbfaf8;
+  background: #8bd9a0;
+  color: #fff;
+  box-shadow: none;
 }
 .primary:disabled {
-  background: #d9d3cc;
+  background: #dfe9e1;
+  color: #a2b2a4;
+  box-shadow: none;
   cursor: not-allowed;
 }
 button:focus-visible,

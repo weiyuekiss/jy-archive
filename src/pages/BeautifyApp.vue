@@ -786,13 +786,15 @@ function showToast(text) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #ffffff;
-  border: 1px solid #ebe5dc;
-  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,.86), rgba(250,250,250,.72));
+  border: 0;
+  border-radius: 24px;
   padding: 12px 14px;
   cursor: pointer;
-  transition: all 0.22s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+  box-shadow: 0 7px 22px rgba(70,72,78,.055);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
 }
 
 .glass-option:active {
@@ -800,9 +802,8 @@ function showToast(text) {
 }
 
 .glass-option.active {
-  background: #fafaf8;
-  border-color: #ddd7ce;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: linear-gradient(135deg, rgba(255,255,255,.94), rgba(247,248,249,.82));
+  box-shadow: 0 7px 22px rgba(70,72,78,.07);
 }
 
 .option-content {
@@ -817,9 +818,9 @@ function showToast(text) {
   flex: none;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
-  background: #f7f5f1;
-  color: #686062;
+  border-radius: 12px;
+  background: #f0f1f2;
+  color: #66676b;
   display: grid;
   place-items: center;
   transition: all 0.22s ease;
@@ -831,8 +832,8 @@ function showToast(text) {
 }
 
 .glass-option.active .option-icon {
-  background: #ede6da;
-  color: #3a3530;
+  background: #e8eaec;
+  color: #4f5054;
 }
 
 .option-text {

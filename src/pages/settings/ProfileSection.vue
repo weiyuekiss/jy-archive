@@ -125,6 +125,9 @@ const hasProfileData = computed(() => {
 
 <template>
   <div class="tab-page profile-settings-page">
+    <button class="profile-back-btn" type="button" aria-label="返回设置" @click="emit('back')">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+    </button>
     <div class="polaroid-switcher">
       <button class="profile-step" type="button" aria-label="上一个人设" :disabled="profileSettings.profiles.length < 2" @click="switchProfile(profileSettings.profiles[(profileSettings.profiles.findIndex(p => p.id === profileSettings.currentProfileId) - 1 + profileSettings.profiles.length) % profileSettings.profiles.length].id)">‹</button>
       <div class="polaroid-stage" :class="{ flipping: isFlipping }">
