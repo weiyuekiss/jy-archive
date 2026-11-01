@@ -12,7 +12,7 @@ const defaultPreset = () => ({
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o',
-  temperature: 0.7,
+  temperature: 0.8,
   models: []
 })
 
@@ -26,7 +26,7 @@ export const apiSettings = reactive({
       baseUrl: 'https://api.openai.com/v1',
       apiKey: '',
       model: 'gpt-4o',
-      temperature: 0.7,
+      temperature: 0.8,
       models: []
     }
   ]
