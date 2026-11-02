@@ -182,13 +182,21 @@ const dragging = computed(() => desktopWidgets.find((w) => w.uid === drag.uid))
       </div>
 
       <div
-        v-for="(c, i) in freeCells"
+        v-for="(app, i) in props.apps"
+        :key="app.id"
+        class="cell"
+        :style="{ gridColumn: 3 + i % 2, gridRow: 3 + Math.floor(i / 2) }"
+      >
+        <AppIcon :app="app" frosted />
+      </div>
+
+      <div
+        v-for="c in freeCells"
         :key="'c' + c.index"
         class="cell"
         :style="{ gridColumn: c.x + 1, gridRow: c.y + 1 }"
         @click.self="editing = false"
       >
-        <AppIcon v-if="props.apps[i]" :app="props.apps[i]" />
       </div>
     </div>
 

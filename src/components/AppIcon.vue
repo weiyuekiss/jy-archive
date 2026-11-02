@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import SolidAppIcon from './icons/SolidAppIcon.vue'
 import { openApp } from '@/stores/desktop'
 import { theme } from '@/stores/theme'
 
@@ -7,7 +8,8 @@ const props = defineProps({
   // { id, name, icon, page? }
   app: { type: Object, required: true },
   // 是否启用液态玻璃质感（未传则跟随全局设置）
-  glass: { type: Boolean, default: null }
+  glass: { type: Boolean, default: null },
+  frosted: { type: Boolean, default: false }
 })
 
 const isGlass = computed(() => {
@@ -20,10 +22,11 @@ const customIcon = computed(() => {
 </script>
 
 <template>
-  <div class="app" :data-app="app.id" @click="openApp(app)">
-    <div class="app-icon" :class="{ 'is-glass': isGlass }">
+  <button class="app" type="button" :data-app="app.id" :aria-label="app.pending ? `${app.name}，敬请期待` : app.name" :aria-disabled="app.pending || undefined" @click="openApp(app)">
+    <div class="app-icon" :class="{ 'is-glass': isGlass && !frosted, 'is-frosted': frosted }">
+      <SolidAppIcon v-if="frosted" :name="app.id" />
       <img
-        v-if="customIcon"
+        v-else-if="customIcon"
         :src="customIcon"
         :alt="app.name"
         class="custom-icon-img"
@@ -31,11 +34,16 @@ const customIcon = computed(() => {
       <component :is="app.icon" v-else />
     </div>
     <span class="app-name" :class="{ 'glass-text': isGlass }">{{ app.name }}</span>
-  </div>
+  </button>
 </template>
 
 <style scoped>
 .app {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -113,6 +121,19 @@ const customIcon = computed(() => {
 
 .app-icon.is-glass :deep(svg) {
   filter: drop-shadow(0 2px 5px rgba(40, 40, 50, 0.12));
+}
+
+.app-icon.is-frosted {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.38));
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  color: #454850;
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  backdrop-filter: blur(18px) saturate(130%);
+  box-shadow: 0 5px 18px rgba(55, 65, 80, 0.09), inset 0 1px 2px rgba(255, 255, 255, 0.95);
+}
+.app-icon.is-frosted :deep(svg) {
+  width: 45%;
+  height: 45%;
 }
 
 .custom-icon-img {

@@ -22,5 +22,10 @@ export const dockApps = [
 ]
 
 // 主屏应用（暂无）
-export const homeApps = []
+export const homeApps = [
+  { id: 'pending-1', name: '待做应用 1', pending: true },
+  { id: 'pending-2', name: '待做应用 2', pending: true },
+  { id: 'pending-3', name: '待做应用 3', pending: true },
+  { id: 'pending-4', name: '待做应用 4', pending: true }
+]
 

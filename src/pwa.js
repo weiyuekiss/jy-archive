@@ -1,6 +1,7 @@
+import { ref } from 'vue'
 import { registerSW } from 'virtual:pwa-register'
 
-export const updateAvailable = { value: false }
+export const updateAvailable = ref(false)
 
 let updateServiceWorker
 let updateCheckPromise

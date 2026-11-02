@@ -11,7 +11,7 @@ const props = defineProps({
   <!-- 底部 Dock 栏：4 个位置 -->
   <nav class="dock">
     <div v-for="i in GRID_COLS" :key="i" class="dock-slot">
-      <AppIcon v-if="props.apps[i - 1]" :app="props.apps[i - 1]" />
+      <AppIcon v-if="props.apps[i - 1]" :app="props.apps[i - 1]" frosted />
     </div>
   </nav>
 </template>

@@ -3,8 +3,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
-export default defineConfig({
-  base: '/jy-archive/',
+export default defineConfig(({ command }) => ({
+  base: command === 'serve' ? '/' : '/jy-archive/',
   plugins: [
     vue(),
     VitePWA({
@@ -21,7 +21,7 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         theme_color: '#ffffff',
-        background_color: '#f8f7f2',
+        background_color: '#f7f8fa',
         icons: [
           { src: '/jy-archive/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: '/jy-archive/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
@@ -53,4 +53,4 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   }
-})
+}))

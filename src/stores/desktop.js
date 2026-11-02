@@ -1,15 +1,44 @@
 // 桌面小组件状态：记录每个小组件在 4 × 6 网格中的位置，并持久化到 IndexedDB
 import { reactive, ref, watch } from 'vue'
 import { GRID_COLS, GRID_ROWS } from '@/apps'
-import { loadWidgets, saveWidgets } from './db'
+import { loadValue, loadWidgets, saveValue, saveWidgets } from './db'
 
 // [{ uid, type, x, y, w, h, data }]，x / y 从 0 开始
 export const desktopWidgets = reactive([])
 
 let saveTimer = null
 let loadedWidgets = false
-loadWidgets().then((list) => {
-  desktopWidgets.splice(0, desktopWidgets.length, ...list)
+Promise.all([loadWidgets(), loadValue('home-layout-v1')]).then(async ([list, initialized]) => {
+  if (!initialized) {
+    const placements = [
+      { type: 'clock-bold', x: 0, y: 0, w: 4, h: 2 },
+      { type: 'couple-day', x: 0, y: 2, w: 2, h: 2 }
+    ]
+    const selected = placements.map((placement) => ({
+      ...(list.find((item) => item.type === placement.type) || { uid: `${placement.type}-${Date.now()}` }),
+      ...placement
+    }))
+    const remaining = list.filter((item) => !selected.some((widget) => widget.uid === item.uid))
+    desktopWidgets.push(...selected)
+    for (const item of remaining) {
+      let placed = false
+      for (let y = 0; y <= GRID_ROWS - item.h && !placed; y++) {
+        for (let x = 0; x <= GRID_COLS - item.w; x++) {
+          if (canPlace(x, y, item.w, item.h)) {
+            desktopWidgets.push({ ...item, x, y })
+            placed = true
+            break
+          }
+        }
+      }
+    }
+    // 原布局单独存档，便于找回因空间不足而未放入首页的小组件。
+    await saveValue('home-layout-backup', list)
+    await saveWidgets(desktopWidgets)
+    await saveValue('home-layout-v1', true)
+  } else {
+    desktopWidgets.splice(0, desktopWidgets.length, ...list)
+  }
   loadedWidgets = true
 })
 watch(
@@ -24,7 +53,7 @@ watch(
 
 // 已被小组件占用的格子索引（y * 列数 + x），ignoreUid 用于拖动时排除自身
 export function occupiedCells(ignoreUid = null) {
-  const cells = new Set()
+  const cells = new Set([10, 11, 14, 15])
   for (const item of desktopWidgets) {
     if (item.uid === ignoreUid) continue
     for (let dy = 0; dy < item.h; dy++) {
