@@ -130,7 +130,10 @@ export const theme = reactive({
   // 图标液态玻璃质感化
   iconGlass: false,
   // 低饱和韩风玻璃色系
-  glassTint: 'clear'
+  glassTint: 'clear',
+  fontAssignments: {},
+  fonts: [],
+  chatBeautifyCss: ''
 })
 
 // 根据 wallpaper ID 与自定义图片生成背景 CSS
@@ -189,14 +192,24 @@ loadValue('theme').then((saved) => {
     if (typeof saved.widgetGlass === 'boolean') theme.widgetGlass = saved.widgetGlass
     if (typeof saved.iconGlass === 'boolean') theme.iconGlass = saved.iconGlass
     if (typeof saved.glassTint === 'string') theme.glassTint = saved.glassTint
+    if (saved.fontAssignments && typeof saved.fontAssignments === 'object') theme.fontAssignments = { ...saved.fontAssignments }
+    if (Array.isArray(saved.fonts)) theme.fonts = saved.fonts
+    if (typeof saved.chatBeautifyCss === 'string') theme.chatBeautifyCss = saved.chatBeautifyCss
     if (saved.customIcons && typeof saved.customIcons === 'object') {
       theme.customIcons = { ...saved.customIcons }
     }
   }
 })
 
-// 监听变更并保存到 IndexedDB
-watch(
+  const fonts = [...theme.fonts]
+  for (const font of fonts) {
+    if (!font.data || !font.family) continue
+    const id = `jy-font-${font.id}`
+    let style = document.getElementById(id)
+    if (!style) { style = document.createElement('style'); style.id = id; document.head.appendChild(style) }
+    style.textContent = `@font-face { font-family: "${String(font.family).replace(/["\\\\]/g, '')}"; src: url("${font.data}"); font-display: swap; }`
+  }
+  watch(
   theme,
   () => {
     saveValue('theme', {
@@ -206,7 +219,10 @@ watch(
       widgetGlass: theme.widgetGlass,
       iconGlass: theme.iconGlass,
       glassTint: theme.glassTint,
-      customIcons: { ...theme.customIcons }
+      customIcons: { ...theme.customIcons },
+      fonts: theme.fonts.map((font) => ({ ...font })),
+      fontAssignments: { ...theme.fontAssignments },
+      chatBeautifyCss: theme.chatBeautifyCss
     })
   },
   { deep: true }

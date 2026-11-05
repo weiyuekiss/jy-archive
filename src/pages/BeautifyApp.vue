@@ -20,9 +20,137 @@ const emit = defineEmits(['close'])
 
 const tabs = [
   { key: 'widgets', label: '桌面小组件' },
-  { key: 'themes', label: '壁纸与图标' }
+  { key: 'themes', label: '壁纸与图标' },
+  { key: 'fonts', label: '字体设置' }
 ]
 const activeTab = ref('widgets')
+const fontTargets = computed(() => dockApps)
+const fontDialogOpen = ref(false)
+const fontDraft = ref(theme.chatBeautifyCss || '')
+const fontFileInput = ref(null)
+const selectorTemplate = `/* Jy OS 聊天界面主题 CSS 参考\n * 仅使用 .chat-app 前缀；建议只调整颜色、间距、圆角、字体和边框。\n */
+.chat-app { --chat-theme-bg: #f7f9f8; --chat-theme-accent: #69a77b; --chat-theme-text: #35443a; }
+.chat-app .topbar { /* 聊天首页顶栏 */ }
+.chat-app .back-button { /* 聊天首页返回 */ }
+.chat-app .round-action { /* 聊天首页操作按钮 */ }
+.chat-app .conversation-overlay { /* 对话遮罩 */ }
+.chat-app .conversation-page { /* 对话页面 */ }
+.chat-app .conversation-header { /* 对话顶栏 */ }
+.chat-app .conversation-back { /* 对话返回按钮 */ }
+.chat-app .conversation-title { /* 对话标题 */ }
+.chat-app .conversation-actions { /* 顶栏操作区 */ }
+.chat-app .conversation-settings { /* 顶栏更多按钮 */ }
+.chat-app .message-list { /* 消息列表 */ }
+.chat-app .load-older-messages { /* 加载更早消息按钮 */ }
+.chat-app .chat-time-divider { /* 时间分隔 */ }
+.chat-app .message-row { /* 消息行 */ }
+.chat-app .message-row.me { /* 我发送的消息行 */ }
+.chat-app .message-row.them { /* 对方消息行 */ }
+.chat-app .tiny-avatar { /* 消息头像 */ }
+.chat-app .message-content-stack { /* 消息内容容器 */ }
+.chat-app .message-bubble-wrap { /* 消息气泡外层 */ }
+.chat-app .message-bubble { /* 普通消息气泡 */ }
+.chat-app .quoted-message { /* 引用消息 */ }
+.chat-app .message-text { /* 消息正文 */ }
+.chat-app .message-reaction { /* 消息反应 */ }
+.chat-app .message-selection-check { /* 多选标记 */ }
+.chat-app .message-timestamp { /* 消息时间 */ }
+.chat-app .transfer-card { /* 转账卡片 */ }
+.chat-app .transfer-icon { /* 转账图标 */ }
+.chat-app .transfer-copy { /* 转账金额与状态 */ }
+.chat-app .text-image-card { /* 文字图卡片 */ }
+.chat-app .polaroid-photo { /* 文字图内容底板 */ }
+.chat-app .special-card-label { /* 文字图标题 */ }
+.chat-app .polaroid-copy { /* 文字图正文 */ }
+.chat-app .polaroid-caption { /* 文字图底部说明 */ }
+.chat-app .document-file-card { /* 文档卡片 */ }
+.chat-app .document-file-icon { /* 文档卡片 W 标识 */ }
+.chat-app .document-file-copy { /* 文档名称与说明 */ }
+.chat-app .voice-message-card { /* 语音消息卡片 */ }
+.chat-app .image-message-card { /* 图片消息卡片 */ }
+.chat-app .character-status-card { /* 角色状态卡片 */ }
+.chat-app .typing-row { /* 正在输入提示 */ }
+.chat-app .reply-status { /* 回复状态提示 */ }
+.chat-app .reply-error { /* 回复错误提示 */ }
+.chat-app .composer { /* 底部输入区 */ }
+.chat-app .quote-compose-preview { /* 回复引用预览 */ }
+.chat-app .composer-input-row { /* 输入行 */ }
+.chat-app .composer-tool { /* 输入区工具按钮 */ }
+.chat-app .composer-add { /* 添加附件按钮 */ }
+.chat-app .composer-camera { /* 图片按钮 */ }
+.chat-app .composer-field { /* 输入框容器 */ }
+.chat-app .composer-field input { /* 消息输入框 */ }
+.chat-app .send-button { /* 发送按钮 */ }
+.chat-app .composer-mic { /* 语音录制按钮 */ }
+.chat-app .receive-button { /* 接听/接收按钮 */ }
+.chat-app .attachment-menu { /* 附件菜单 */ }
+.chat-app .attachment-menu button { /* 附件菜单按钮 */ }
+.chat-app .transfer-compose-dialog { /* 转账编辑弹窗 */ }
+.chat-app .text-image-dialog { /* 文字图编辑弹窗 */ }
+.chat-app .polaroid-overlay { /* 文字图预览遮罩 */ }
+.chat-app .polaroid-expanded { /* 展开的文字图 */ }
+.chat-app button { /* 聊天页面按钮通用规则 */ }
+`
+const htmlTemplate = ref('<div class="bubble">{{ message }}</div>')
+const htmlTemplateError = ref('')
+const htmlAllowedTags = ['div', 'span', 'p', 'strong', 'em', 'small', 'br']
+function validateChatHtml() {
+  const source = htmlTemplate.value
+  const tags = [...source.matchAll(/<\/?([a-z][a-z0-9-]*)\b[^>]*>/gi)]
+  if (/<\s*script|\son[a-z]+\s*=|javascript:|<\s*(iframe|object|embed|style|link)\b/i.test(source)) { htmlTemplateError.value = '模板包含不允许的脚本、事件或外部元素'; return false }
+  const invalid = tags.find((match) => !htmlAllowedTags.includes(match[1].toLowerCase()))
+  if (invalid) { htmlTemplateError.value = `不支持 <${invalid[1]}> 标签，仅允许：${htmlAllowedTags.join('、')}`; return false }
+  htmlTemplateError.value = ''
+  return true
+}
+function copySelectors() { navigator.clipboard?.writeText(selectorTemplate).then(() => showToast('已复制完整 CSS 选择器模板')).catch(() => showToast('复制失败，请检查剪贴板权限')) }
+function downloadSelectors() {
+  const blob = new Blob([selectorTemplate], { type: 'text/css;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a'); link.href = url; link.download = 'jy-os-chat-theme.css'; link.click(); URL.revokeObjectURL(url)
+}
+const fontName = (id) => theme.fonts.find((font) => font.id === id)?.name || '系统默认'
+const fontFamilyFor = (id) => theme.fonts.find((font) => font.id === id)?.family || 'system-ui, sans-serif'
+const chatPreviewStyle = computed(() => ({ fontFamily: fontFamilyFor(theme.fontAssignments.chat) }))
+function openCssEditor() { fontDraft.value = theme.chatBeautifyCss || ''; fontDialogOpen.value = true }
+function saveBeautifyCss() {
+  const css = fontDraft.value.slice(0, 30000)
+  const importMatch = css.match(/@import\s+url\(["']?(https:\/\/fontsapi\.zeoseven\.com\/[^"')]+)["']?\)\s*;/i)
+  const familyMatch = css.match(/font-family\s*:\s*["']([^"']+)["']/i)
+  theme.chatBeautifyCss = css
+  if (importMatch && familyMatch) {
+    const id = 'zero-planet-custom'
+    if (!theme.fonts.some((font) => font.id === id)) theme.fonts.push({ id, name: familyMatch[1], family: familyMatch[1], source: importMatch[1] })
+    else Object.assign(theme.fonts.find((font) => font.id === id), { name: familyMatch[1], family: familyMatch[1], source: importMatch[1] })
+    theme.fontAssignments.chat = id
+  }
+  fontDialogOpen.value = false
+  showToast('字体与聊天美化 CSS 已保存')
+}
+function clearBeautifyCss() { theme.chatBeautifyCss = ''; fontDraft.value = ''; showToast('已清除聊天美化 CSS') }
+function importFont(e) {
+  const file = e.target.files?.[0]; e.target.value = ''
+  if (!file) return
+  if (!/\.(woff2?|ttf|otf)$/i.test(file.name) || file.size > 5 * 1024 * 1024) { showToast('请选择 5MB 内的 WOFF、TTF 或 OTF 字体'); return }
+  const reader = new FileReader()
+  reader.onerror = () => showToast('字体读取失败')
+  reader.onload = () => {
+    const id = `font-${Date.now()}`
+    const family = `JyFont${Date.now()}`
+    theme.fonts.push({ id, name: file.name, family, data: reader.result })
+    theme.fontAssignments.chat = id
+    showToast('字体已导入并应用到聊天')
+  }
+  reader.readAsDataURL(file)
+}
+function removeFont(font) {
+  theme.fonts = theme.fonts.filter((item) => item.id !== font.id)
+  for (const appId of Object.keys(theme.fontAssignments)) if (theme.fontAssignments[appId] === font.id) delete theme.fontAssignments[appId]
+}
+function applyZeroPlanet() {
+  fontDraft.value = `@import url("https://fontsapi.zeoseven.com/995/main/result.css");\n\nbody {\n    font-family: "Z Labs RoundPix 12px M CN";\n    font-weight: normal;\n}`
+  fontDialogOpen.value = true
+}
 const activeSize = ref(WIDGET_SIZES[0].key)
 const iconDialog = ref(null)
 const iconUrl = ref('')
@@ -316,6 +444,56 @@ function showToast(text) {
       </button>
     </section>
 
+    <!-- 字体设置分区 -->
+    <section v-if="activeTab === 'fonts'" class="section font-section">
+      <div class="group">
+        <h2>各 App 全局字体</h2>
+        <p class="font-help">为每个应用单独选择已导入字体；聊天预览会即时展示当前字体。</p>
+        <label v-for="app in fontTargets" :key="app.id" class="font-app-row">
+          <span>{{ app.name }}</span>
+          <select v-model="theme.fontAssignments[app.id]">
+            <option value="">系统默认</option>
+            <option v-for="font in theme.fonts" :key="font.id" :value="font.id">{{ font.name }}</option>
+          </select>
+        </label>
+      </div>
+      <div class="group">
+        <h2>字体预览</h2>
+        <div class="font-preview" :style="{ fontFamily: fontFamilyFor(theme.fontAssignments.chat) }"><strong>你好，世界</strong><span>The quick brown fox · 012345</span><small>当前聊天字体：{{ fontName(theme.fontAssignments.chat) }}</small></div>
+      </div>
+      <div class="group">
+        <h2>聊天界面美化</h2>
+        <p class="font-help">覆盖聊天顶栏、气泡、输入区、转账与文字图等元素。CSS 参考模板可复制或下载。</p>
+        <div class="beautify-actions"><button type="button" @click="applyZeroPlanet">零点行星字体 CSS</button><button type="button" @click="openCssEditor">编辑自定义 CSS</button></div>
+        <div class="beautify-actions selector-actions"><button type="button" @click="copySelectors">复制完整选择器</button><button type="button" @click="downloadSelectors">下载 CSS 模板</button></div>
+        <div class="chat-style-preview" :style="chatPreviewStyle"><span class="preview-bubble">你好，今天也要保持好心情。</span><span class="preview-bubble mine">当然！</span><small>聊天界面预览 · {{ theme.chatBeautifyCss ? '已配置样式' : '默认样式' }}</small></div>
+        <button v-if="theme.chatBeautifyCss" class="manage-css" type="button" @click="clearBeautifyCss">移除当前聊天美化</button>
+      </div>
+      <div class="group">
+        <h2>HTML 组件模板</h2>
+        <p class="font-help">可编辑受限的消息片段模板。仅允许 div、span、p、strong、em、small、br 标签；禁止脚本、事件属性和外链。</p>
+        <textarea class="html-template-input" v-model="htmlTemplate" aria-label="HTML 组件模板" @input="validateChatHtml"></textarea>
+        <p v-if="htmlTemplateError" class="html-error" role="alert">{{ htmlTemplateError }}</p>
+        <div class="html-preview" v-if="!htmlTemplateError"><strong>模板预览</strong><code>{{ htmlTemplate.replaceAll('&#123;&#123; message &#125;&#125;', '这是一条预览消息') }}</code></div>
+      </div>
+        <div class="group">
+      <h2>字体管理</h2>
+        <button class="font-import" type="button" @click="fontFileInput?.click()">＋ 导入字体文件</button>
+        <input ref="fontFileInput" type="file" accept=".woff,.woff2,.ttf,.otf,font/woff,font/woff2,font/ttf,font/otf" hidden @change="importFont" />
+        <div v-if="theme.fonts.length" class="font-list"><div v-for="font in theme.fonts" :key="font.id"><span>{{ font.name }}</span><button type="button" @click="removeFont(font)">删除</button></div></div>
+        <p v-else class="font-help">尚未导入字体。支持 WOFF、WOFF2、TTF、OTF，单文件最大 5MB。</p>
+      </div>
+    </section>
+
+    <div v-if="fontDialogOpen" class="css-editor-mask" @click.self="fontDialogOpen = false">
+      <section class="css-editor" role="dialog" aria-modal="true" aria-label="聊天界面 CSS 编辑器">
+        <header><div><small>CHAT CUSTOMIZATION</small><h2>聊天界面 CSS</h2></div><button type="button" aria-label="关闭" @click="fontDialogOpen = false">×</button></header>
+        <p>请使用 .chat-app 作为选择器前缀，样式仅用于聊天界面。</p>
+        <textarea v-model="fontDraft" spellcheck="false" aria-label="自定义聊天 CSS" placeholder=".chat-app {\n  font-family: sans-serif;\n}"></textarea>
+        <footer><button type="button" @click="fontDialogOpen = false">取消</button><button type="button" @click="saveBeautifyCss">保存并应用</button></footer>
+      </section>
+    </div>
+
     <div v-if="iconDialog" class="icon-dialog-mask" @click.self="iconDialog = null">
       <section class="icon-dialog" role="dialog" aria-modal="true" :aria-label="`更换${iconDialog.name}图标`">
         <header><div><small>APP ICON</small><h2>更换{{ iconDialog.name }}图标</h2></div><button aria-label="关闭" @click="iconDialog = null">×</button></header>
@@ -331,6 +509,120 @@ function showToast(text) {
     </transition>
   </div>
 </template>
+
+<style scoped>
+.font-section {
+  padding: 22px 20px calc(40px + env(safe-area-inset-bottom));
+  background: #f7f9f8;
+}
+.font-section .group {
+  margin: 0 0 16px;
+  padding: 18px;
+  border: 1px solid #edf0ee;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(37, 69, 53, .035);
+}
+.font-section .group h2 {
+  margin: 0 0 8px;
+  color: #293b32;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+.font-help { margin: 0 0 12px; color: #929b95; font-size: 12px; line-height: 1.6; }
+.font-app-row {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #f0f2f0;
+  color: #45534b;
+  font-size: 13px;
+}
+.font-app-row select {
+  max-width: 58%;
+  min-width: 120px;
+  padding: 9px 30px 9px 12px;
+  border: 1px solid #e8ece9;
+  border-radius: 11px;
+  outline: 0;
+  background: #f8faf8;
+  color: #4b5b51;
+  font: inherit;
+}
+.font-app-row select:focus { border-color: #9bc9ad; box-shadow: 0 0 0 3px #eaf5ed; }
+.font-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 17px;
+  border: 1px solid #edf1ee;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #fbfdfb, #f3f8f4);
+  color: #3b4c42;
+}
+.font-preview strong { font-size: 21px; font-weight: 600; }
+.font-preview span { font-size: 13px; color: #728078; }
+.font-preview small,.chat-style-preview small { color: #9aa49d; font-size: 11px; }
+.beautify-actions { display: flex; gap: 9px; margin: 12px 0; }
+.beautify-actions button,.font-import {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #dcebe0;
+  border-radius: 12px;
+  background: #edf7f0;
+  color: #39734d;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.beautify-actions button:last-child { background: #f3f5f4; border-color: #e8ece9; color: #58645c; }
+.selector-actions { margin-top: -2px; }
+.html-template-input { width: 100%; min-height: 150px; resize: vertical; padding: 13px; border: 1px solid #e7ece8; border-radius: 13px; outline: 0; background: #f8faf8; color: #405247; font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.html-template-input:focus { border-color: #a8ccb3; box-shadow: 0 0 0 3px #edf6ef; }
+.html-error { margin: 8px 0 0; color: #bb5d57; font-size: 12px; }
+.html-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; color: #647168; font-size: 12px; }
+.html-preview code { padding: 12px; border-radius: 11px; background: #f4f7f4; color: #526057; white-space: pre-wrap; overflow-wrap: anywhere; }
+.beautify-actions button:active,.font-import:active { transform: scale(.98); }
+.chat-style-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #edf1ee;
+  border-radius: 15px;
+  background: #fafcfa;
+}
+.preview-bubble { max-width: 86%; padding: 10px 13px; border-radius: 15px 15px 15px 5px; background: #f0f2f0; color: #465149; font-size: 13px; }
+.preview-bubble.mine { align-self: flex-end; border-radius: 15px 15px 5px 15px; background: #e4f2e8; color: #3d684a; }
+.manage-css { margin-top: 11px; padding: 7px 0; border: 0; background: none; color: #89938c; font-size: 12px; cursor: pointer; }
+.font-import { width: 100%; margin: 4px 0 12px; background: #f4f6f5; border-color: #e9eeea; color: #59675e; }
+.font-list { display: flex; flex-direction: column; }
+.font-list > div { min-height: 46px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #f0f2f0; color: #526057; font-size: 12px; }
+.font-list button { padding: 6px 10px; border: 0; border-radius: 9px; background: #f5f6f5; color: #929a94; font-size: 11px; cursor: pointer; }
+.css-editor-mask { position: fixed; inset: 0; z-index: 45; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(27, 42, 33, .28); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); }
+.css-editor { width: min(760px, 100%); height: min(88dvh, 820px); display: flex; flex-direction: column; padding: 20px; border: 1px solid rgba(255,255,255,.8); border-radius: 24px; background: #fff; box-shadow: 0 24px 80px rgba(26, 52, 37, .18); }
+.css-editor header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 14px; border-bottom: 1px solid #edf0ee; }
+.css-editor header small { color: #85a18e; font-size: 9px; letter-spacing: .15em; }
+.css-editor header h2 { margin: 4px 0 0; color: #304238; font-size: 18px; }
+.css-editor header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f2f5f3; color: #78847c; font-size: 23px; cursor: pointer; }
+.css-editor > p { margin: 12px 0; color: #8a958d; font-size: 12px; }
+.css-editor textarea { flex: 1; min-height: 0; resize: none; padding: 16px; border: 1px solid #e7ece8; border-radius: 14px; outline: 0; background: #f8faf8; color: #3e5145; font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+.css-editor textarea:focus { border-color: #a8ccb3; box-shadow: 0 0 0 3px #edf6ef; }
+.css-editor footer { display: flex; justify-content: flex-end; gap: 9px; padding-top: 14px; }
+.css-editor footer button { min-height: 40px; padding: 0 16px; border: 1px solid #e8ece9; border-radius: 12px; background: #f5f7f5; color: #68736b; font-size: 12px; cursor: pointer; }
+.css-editor footer button:last-child { border-color: #4f8b61; background: #5a986b; color: #fff; }
+@media (max-width: 420px) {
+  .font-section { padding-right: 15px; padding-left: 15px; }
+  .font-section .group { padding: 15px; border-radius: 17px; }
+  .beautify-actions { flex-direction: column; }
+  .beautify-actions button { width: 100%; }
+  .css-editor { height: calc(100dvh - 32px); padding: 16px; border-radius: 20px; }
+}
+</style>
 
 <style scoped>
 .beautify {
