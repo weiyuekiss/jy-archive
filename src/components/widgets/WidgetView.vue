@@ -13,7 +13,8 @@ const props = defineProps({
 })
 
 const isGlass = computed(() => {
-  return props.glass !== null ? props.glass : theme.widgetGlass
+  // 主页大卡片保留原有封面与底部玻璃层，不叠加整卡磨砂效果
+  return props.type !== 'profile-card-clean' && (props.glass !== null ? props.glass : true)
 })
 
 const emit = defineEmits(['custom-action'])
@@ -444,14 +445,11 @@ const coupleDays = computed(() => {
 
 /* ===== 液态玻璃质感（组件白色部分透出桌面壁纸） ===== */
 .widget.is-glass {
-  background: var(--glass-widget-bg, linear-gradient(135deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.28) 100%));
-  -webkit-backdrop-filter: blur(24px) saturate(190%) brightness(105%);
-  backdrop-filter: blur(24px) saturate(190%) brightness(105%);
-  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.8));
-  box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.06),
-    inset 0 1.5px 2px rgba(255, 255, 255, 0.95),
-    inset 0 -1.5px 2px rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, rgba(246, 248, 247, 0.48) 0%, rgba(232, 238, 238, 0.28) 100%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  backdrop-filter: blur(24px) saturate(145%);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 10px 30px rgba(48, 58, 62, 0.07), inset 0 1px 1px rgba(255, 255, 255, 0.38);
 }
 
 /* 液态玻璃顶端曲面流光反光层 */
@@ -462,7 +460,7 @@ const coupleDays = computed(() => {
   left: 0;
   right: 0;
   height: 48%;
-  background: linear-gradient(180deg, var(--glass-sheen, rgba(255, 255, 255, 0.55)) 0%, rgba(255, 255, 255, 0.02) 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.015) 100%);
   border-bottom-left-radius: 28px;
   border-bottom-right-radius: 28px;
   pointer-events: none;
@@ -535,7 +533,7 @@ const coupleDays = computed(() => {
 .widget.is-glass .profile-card-clean .clean-gradient {
   background: linear-gradient(180deg, transparent 15%, rgba(30, 29, 32, .16) 48%, rgba(30, 29, 32, .68) 100%);
 }
-.widget.is-glass .clock-bold { color: #222; }
+.widget.is-glass .clock-bold { color: #3f4145; }
 
 .tinted {
   background: #f6f6f4;
@@ -631,8 +629,8 @@ const coupleDays = computed(() => {
 }
 
 /* 4×2 粗体数字时钟（无卡片式） */
-.clock-bold{display:flex;align-items:center;justify-content:center;gap:1.4%;font-size:62cqh;font-weight:800;letter-spacing:-.085em;color:#262629;font-variant-numeric:tabular-nums;line-height:1}
-.clock-bold i{font-style:normal;color:rgba(38,38,41,.42);transform:translateY(-3%)}
+.clock-bold{display:flex;align-items:center;justify-content:center;gap:1.4%;font-size:62cqh;font-weight:500;letter-spacing:-.085em;color:#3f4145;font-variant-numeric:tabular-nums;line-height:1}
+.clock-bold i{font-style:normal;color:#3f4145;transform:translateY(-3%)}
 
 /* 4×2 时间横幅 */
 .time-wide {

@@ -70,7 +70,7 @@ async function handleFetchModels() {
   const preset = currentPreset.value
   if (!preset) return
   if (!preset.baseUrl) {
-    emit('toast', '请先输入 API 地址 (Base URL)')
+    emit('toast', '请先输入接口地址')
     return
   }
   isFetchingModels.value = true
@@ -105,13 +105,6 @@ function handleSaveCurrentModel() {
   emit('toast', `已保存配置 (${currentPreset.value?.model || '默认'})`)
 }
 
-const temperatureDesc = computed(() => {
-  const t = currentPreset.value?.temperature ?? 0.7
-  if (t <= 0.3) return '严谨专注 · 精准逻辑'
-  if (t <= 0.8) return '均衡适中 · 自然流畅'
-  if (t <= 1.3) return '活泼发散 · 富有创意'
-  return '天马行空 · 极度自由'
-})
 </script>
 
 <template>
@@ -120,7 +113,7 @@ const temperatureDesc = computed(() => {
     <div class="k-card">
       <div class="card-head">
         <div class="title-with-badge">
-          <span class="section-title">API 预设方案</span>
+          <span class="section-title">服务预设</span>
           <span class="count-pill">{{ apiSettings.presets.length }} 个预设</span>
         </div>
         <button class="k-action-btn" type="button" @click="handleAddPreset">
@@ -145,11 +138,11 @@ const temperatureDesc = computed(() => {
     <div class="k-card">
       <div class="card-head">
         <span class="section-title">接口连接配置</span>
-        <span class="hint-tag">兼容 OpenAI / DeepSeek / 本地服务</span>
+        <span class="hint-tag">兼容常见服务与本地接口</span>
       </div>
 
       <div class="field-item">
-        <label class="field-label">API 接口地址 (Base URL)</label>
+        <label class="field-label">接口地址</label>
         <div class="input-wrap">
           <input
             v-model="currentPreset.baseUrl"
@@ -159,7 +152,7 @@ const temperatureDesc = computed(() => {
           />
         </div>
         <div class="quick-tags">
-          <span class="quick-hint">快捷填入:</span>
+          <span class="quick-hint">常用地址</span>
           <button
             v-for="item in commonBaseUrls"
             :key="item.name"
@@ -173,7 +166,7 @@ const temperatureDesc = computed(() => {
       </div>
 
       <div class="field-item">
-        <label class="field-label">API 密钥 (API Key)</label>
+        <label class="field-label">密钥</label>
         <div class="input-wrap has-suffix">
           <input
             v-model="currentPreset.apiKey"
@@ -229,8 +222,8 @@ const temperatureDesc = computed(() => {
       <div v-if="showModelList && currentPreset.models?.length" class="models-box">
         <div class="box-head">
           <div class="box-title">
-            <span>从服务器拉取的模型库</span>
-            <small>点击即可填入并持久化保存</small>
+            <span>服务器模型列表</span>
+            <small>选择后会自动保存</small>
           </div>
           <input
             v-model="modelSearchQuery"
@@ -258,39 +251,12 @@ const temperatureDesc = computed(() => {
       </div>
     </div>
 
-    <!-- 对话温度 Temperature 设置 -->
-    <div class="k-card">
-      <div class="card-head">
-        <div class="title-with-badge">
-          <span class="section-title">对话温度 (Temperature)</span>
-          <span class="temp-badge">{{ Number(currentPreset.temperature ?? 0.7).toFixed(2) }}</span>
-        </div>
-        <span class="temp-status-text">{{ temperatureDesc }}</span>
-      </div>
-
-      <div class="slider-container">
-        <input
-          v-model.number="currentPreset.temperature"
-          type="range"
-          min="0"
-          max="2"
-          step="0.05"
-          class="k-slider"
-        />
-        <div class="slider-marks">
-          <span>0.0 严谨</span>
-          <span>0.7 均衡</span>
-          <span>1.4 活跃</span>
-          <span>2.0 天马行空</span>
-        </div>
-      </div>
-    </div>
   </div>
   <transition name="modal-fade">
     <div v-if="showPresetModal" class="edit-modal-backdrop" @click.self="showPresetModal = false">
-      <section class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="preset-modal-title">
+      <section class="edit-modal api-preset-modal" role="dialog" aria-modal="true" aria-labelledby="preset-modal-title">
         <button class="modal-close" type="button" aria-label="关闭" @click="showPresetModal = false">×</button>
-        <span class="modal-kicker">A NEW CONNECTION</span>
+        <span class="modal-kicker">新建预设</span>
         <h2 id="preset-modal-title">新增 API 预设</h2>
         <p>为这组服务配置取一个容易辨认的名字。</p>
         <input v-model="newPresetName" class="name-input" type="text" maxlength="32" placeholder="例如：DeepSeek 日常" @keyup.enter="confirmAddPreset" @keyup.esc="showPresetModal = false" />

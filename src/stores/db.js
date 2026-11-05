@@ -54,12 +54,15 @@ export async function loadValue(key) {
 
 export async function saveValue(key, value) {
   try {
+    // Vue reactive values (including nested arrays and objects) are proxies and cannot be structured-cloned by IndexedDB.
+    const serializableValue = JSON.parse(JSON.stringify(value))
     const db = await openDB()
-    return new Promise((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
-      const req = tx.objectStore(STORE_NAME).put(value, key)
-      req.onsuccess = () => resolve()
-      req.onerror = () => reject(req.error)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error || new Error(`保存 ${key} 的事务已中止`))
+      tx.objectStore(STORE_NAME).put(serializableValue, key)
     })
   } catch (err) {
     console.warn(`[db] 保存 ${key} 失败`, err)

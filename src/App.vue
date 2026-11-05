@@ -4,31 +4,39 @@ import HomeGrid from '@/components/HomeGrid.vue'
 import AppDock from '@/components/AppDock.vue'
 import { dockApps, homeApps } from '@/apps'
 import { activeApp, closeApp } from '@/stores/desktop'
-import { theme, wallpaperCss, iconStyleVars, glassVars } from '@/stores/theme'
-import { checkForAppUpdate, reloadWithLatestVersion, updateAvailable } from '@/pwa'
+import { theme, wallpaperCss, glassVars } from '@/stores/theme'
+import { checkForAppUpdate, reloadWithLatestVersion, updateAvailable, appVersion, appBuildTime } from '@/pwa'
 
 const showWelcome = ref(true)
 const showUpdatePrompt = computed(() => updateAvailable.value)
+const showBuildInfo = ref(true)
 let enterTimer
+let buildInfoTimer
 
 onMounted(() => {
   void checkForAppUpdate()
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  enterTimer = window.setTimeout(() => { showWelcome.value = false }, reducedMotion ? 150 : 1000)
+  enterTimer = window.setTimeout(() => {
+    showWelcome.value = false
+    buildInfoTimer = window.setTimeout(() => { showBuildInfo.value = false }, 5000)
+  }, reducedMotion ? 150 : 1000)
 })
-onUnmounted(() => window.clearTimeout(enterTimer))
+onUnmounted(() => {
+  window.clearTimeout(enterTimer)
+  window.clearTimeout(buildInfoTimer)
+})
 
 // 桌面壁纸与全局图标风格、液态玻璃质感 CSS 变量
 const desktopStyle = computed(() => {
   return {
     background: wallpaperCss(theme.wallpaper, theme.customImage),
-    ...iconStyleVars(theme.iconStyle),
     ...glassVars(theme.glassTint)
   }
 })
 
 const statusThemeColor = computed(() => {
   if (showWelcome.value) return '#f7f8fa'
+  if (activeApp.value?.id === 'chat') return '#fffdf7'
   if (activeApp.value?.id === 'beautify') return '#ffffff'
   if (activeApp.value?.id === 'chat') return '#f0f0f0'
   if (activeApp.value?.id === 'character') return '#fbfaf8'
@@ -62,12 +70,13 @@ watch(statusThemeColor, (color) => {
   >
     <HomeGrid :apps="homeApps" />
     <AppDock :apps="dockApps" />
+    <footer v-if="showBuildInfo" class="app-build-info" aria-label="应用版本信息">版本 {{ appVersion }} · 构建于 {{ new Date(appBuildTime).toLocaleString('zh-CN') }}</footer>
   </main>
   <component :is="activeApp.page" v-if="activeApp" @close="closeApp" />
   <div v-if="showUpdatePrompt && !showWelcome" class="update-backdrop">
     <section class="update-dialog" role="alertdialog" aria-modal="true" aria-labelledby="update-title" aria-describedby="update-description">
       <h2 id="update-title">发现应用更新</h2>
-      <p id="update-description">新版本已就绪，重新加载即可更新。</p>
+      <p id="update-description">当前版本 {{ appVersion }}（{{ new Date(appBuildTime).toLocaleString('zh-CN') }}）发现新版本已就绪。点击后将激活新代码并重新加载应用。</p>
       <button type="button" class="update-reload" @click="reloadWithLatestVersion">重新加载并更新</button>
     </section>
   </div>
@@ -107,6 +116,17 @@ watch(statusThemeColor, (color) => {
 @keyframes mark-arrive {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.app-build-info {
+  position: fixed;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 3px);
+  z-index: 2;
+  color: #8b919a;
+  font-size: 10px;
+  line-height: 1.3;
+  pointer-events: none;
 }
 
 .update-backdrop {
@@ -158,8 +178,10 @@ watch(statusThemeColor, (color) => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding-top: calc(env(safe-area-inset-top) + 5vh);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 5vh);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   background: #ffffff;
   transition: background-image 0.3s ease, background-color 0.3s ease;
 }
@@ -167,4 +189,6 @@ watch(statusThemeColor, (color) => {
 .desktop.has-open-app {
   background: #fbfaf8;
 }
+
+
 </style>

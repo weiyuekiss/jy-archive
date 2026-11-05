@@ -8,11 +8,6 @@ import ProfileSection from './settings/ProfileSection.vue'
 const emit = defineEmits(['close'])
 
 const currentPage = ref('main') // 'main' | 'api' | 'profile'
-const showApiDetails = ref(false)
-const showEditModal = ref(false)
-const editMode = ref('name')
-const tempName = ref('')
-const tempSignature = ref('')
 const backupInput = ref(null)
 const isImporting = ref(false)
 
@@ -69,61 +64,49 @@ function showToast(msg) {
   toastTimer = setTimeout(() => (toast.value = ''), 2000)
 }
 
-// 进入子页面
 function navigateTo(page) {
   currentPage.value = page
-  if (page === 'api') showApiDetails.value = true
 }
 
 // 返回主页面
 function goBack() {
-  if (currentPage.value === 'main') {
-    emit('close')
-  } else {
-    currentPage.value = 'main'
-  }
-}
-
-function startEditName() {
-  tempName.value = ''
-  showEditModal.value = true
-}
-
-async function saveName() {
-  showEditModal.value = false
-}
-
-function cancelEditName() {
-  showEditModal.value = false
+  if (currentPage.value === 'main') emit('close')
+  else currentPage.value = 'main'
 }
 </script>
 
 <template>
   <div class="settings-app">
-    <button v-if="currentPage === 'main'" class="settings-back-btn" type="button" aria-label="返回" @click="goBack">
+    <button class="settings-back-btn" type="button" aria-label="返回" @click="goBack">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
     </button>
     <main class="app-content">
+      <div class="retro-window">
+        <div class="window-titlebar">
+          <div class="window-title"><span class="window-gem">◆</span><span>JY 个人空间</span></div>
+          <div class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></div>
+        </div>
+        <div class="window-menu"><span>文件</span><span>编辑</span><span>查看</span><span>帮助</span></div>
+        <div class="window-body">
       <div v-if="currentPage === 'main'" class="main-page">
         <section class="settings-welcome">
+          <span class="desktop-mark" aria-hidden="true">✳</span>
           <h2>设置</h2>
-          <p>管理应用配置与个人资料。</p>
+          <p>配置服务与个人资料</p>
         </section>
         <section class="menu-section">
-          <div class="settings-section-label">PREFERENCES <span>偏好与配置</span></div>
-          <button class="menu-item" :class="{ expanded: showApiDetails }" :aria-expanded="showApiDetails" @click="showApiDetails = !showApiDetails">
+          <button class="menu-item" type="button" @click="navigateTo('api')">
             <div class="menu-icon menu-icon-api"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
-            <div class="menu-content"><span class="menu-title">API 配置</span><span class="menu-desc">模型服务、预设管理、温度设置</span></div>
+            <div class="menu-content"><span class="menu-title">API 配置</span><span class="menu-desc">服务地址、密钥与模型</span></div>
             <svg class="menu-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
           </button>
-          <div v-if="showApiDetails" class="api-expanded"><ApiSection @toast="showToast" /></div>
-          <button class="menu-item" @click="navigateTo('profile')">
+          <button class="menu-item" type="button" @click="navigateTo('profile')">
             <div class="menu-icon menu-icon-profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg></div>
-            <div class="menu-content"><span class="menu-title">人设配置</span><span class="menu-desc">生日、年龄、职业、自我介绍</span></div>
+            <div class="menu-content"><span class="menu-title">人设配置</span><span class="menu-desc">称呼、身份与自我介绍</span></div>
             <svg class="menu-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
           </button>
           <section class="data-storage-card" aria-label="数据存储">
-            <div class="data-storage-heading"><div><h3>数据存储</h3><p>将应用数据备份为文件，或从备份恢复。</p></div><span class="storage-icon" aria-hidden="true">↕</span></div>
+            <div class="data-storage-heading"><div><h3>数据存储</h3><p>将应用数据备份为文件，或从备份恢复。</p></div></div>
             <div class="storage-actions">
               <button type="button" class="storage-action" @click="exportData">导出数据</button>
               <button type="button" class="storage-action primary" :disabled="isImporting" @click="chooseBackup">{{ isImporting ? '导入中…' : '导入数据' }}</button>
@@ -133,21 +116,16 @@ function cancelEditName() {
           </section>
         </section>
       </div>
+      <div v-else-if="currentPage === 'api'" class="settings-subpage">
+        <header class="settings-page-header"><button type="button" aria-label="返回设置" @click="currentPage = 'main'"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button><h1>API 配置</h1><span></span></header>
+        <ApiSection @toast="showToast" />
+      </div>
       <ProfileSection v-else-if="currentPage === 'profile'" @toast="showToast" @back="currentPage = 'main'" />
+        </div>
+        <div class="window-status"><span>就绪</span><span>个人主页 · 在线</span></div>
+      </div>
     </main>
 
-    <transition name="modal-fade">
-      <div v-if="showEditModal" class="edit-modal-backdrop" @click.self="cancelEditName" @keyup.esc="cancelEditName">
-        <section class="edit-modal" role="dialog" aria-modal="true" aria-label="设置">
-          <button class="modal-close" aria-label="关闭" @click="cancelEditName">×</button>
-          <span class="modal-kicker">PERSONAL SPACE</span><h2>设置</h2><p>人设配置页面暂时保持原样。</p>
-          <div class="modal-actions"><button class="cancel-btn" @click="cancelEditName">关闭</button></div>
-        </section>
-      </div>
-    </transition>
-
-
-    <!-- Toast 提示 -->
     <transition name="toast-fade">
       <div v-if="toast" class="toast" role="status">
         <span class="toast-dot" />

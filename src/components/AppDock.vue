@@ -23,11 +23,11 @@ const props = defineProps({
   display: grid;
   grid-template-columns: repeat(var(--cols), 1fr);
   border-radius: 30px;
-  background: rgba(240, 240, 245, 0.72);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
-  backdrop-filter: blur(24px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04), inset 0 1px 1.5px rgba(255, 255, 255, 0.9);
+  background: rgba(245, 246, 248, 0.24);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+  border: 0;
+  box-shadow: 0 8px 24px rgba(35, 42, 52, 0.06);
 }
 
 .dock-slot {

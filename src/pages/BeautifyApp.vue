@@ -5,15 +5,13 @@ import PhotoPickerDialog from '@/components/widgets/PhotoPickerDialog.vue'
 import { dockApps } from '@/apps'
 import BeautifyIcon from '@/components/icons/BeautifyIcon.vue'
 import { WIDGET_SIZES, widgetCatalog } from '@/widgets'
-import { addWidget } from '@/stores/desktop'
+import { addWidget, desktopPageCount, setDesktopPageCount } from '@/stores/desktop'
 import {
   theme,
   WALLPAPERS,
   ICON_STYLES,
-  GLASS_TINTS,
   wallpaperCss,
   iconStyleVars,
-  glassVars,
   applyTheme,
   compressImageFile
 } from '@/stores/theme'
@@ -81,15 +79,11 @@ const draft = ref({
   wallpaper: theme.wallpaper,
   iconStyle: theme.iconStyle,
   customImage: theme.customImage,
-  widgetGlass: theme.widgetGlass,
-  iconGlass: theme.iconGlass,
-  glassTint: theme.glassTint || 'clear'
 })
 
 const previewStyle = computed(() => ({
   background: wallpaperCss(draft.value.wallpaper, draft.value.customImage),
-  ...iconStyleVars(draft.value.iconStyle),
-  ...glassVars(draft.value.glassTint)
+  ...iconStyleVars(draft.value.iconStyle)
 }))
 
 const isApplied = computed(
@@ -97,23 +91,8 @@ const isApplied = computed(
     draft.value.wallpaper === theme.wallpaper &&
     draft.value.iconStyle === theme.iconStyle &&
     draft.value.customImage === theme.customImage &&
-    draft.value.widgetGlass === theme.widgetGlass &&
-    draft.value.iconGlass === theme.iconGlass &&
-    draft.value.glassTint === theme.glassTint &&
     JSON.stringify(customIconDraft.value) === JSON.stringify(theme.customIcons || {})
 )
-
-function toggleWidgetGlass() {
-  draft.value.widgetGlass = !draft.value.widgetGlass
-}
-
-function toggleIconGlass() {
-  draft.value.iconGlass = !draft.value.iconGlass
-}
-
-function pickGlassTint(id) {
-  draft.value.glassTint = id
-}
 
 const glyphs = [
   'M4 8h3l2-3h6l2 3h3v11H4z M12 10.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 1 0 0-7',
@@ -200,6 +179,17 @@ function showToast(text) {
 
     <!-- 桌面小组件分区 -->
     <section v-if="activeTab === 'widgets'" class="section">
+      <div class="group page-setting">
+        <div>
+          <h2>桌面页数</h2>
+          <p>可在桌面左右边缘拖动图标或小组件切换页面</p>
+        </div>
+        <div class="page-count-control" role="group" aria-label="设置桌面页数">
+          <button type="button" aria-label="减少桌面页数" :disabled="desktopPageCount <= 1" @click="setDesktopPageCount(desktopPageCount - 1)">−</button>
+          <strong>{{ desktopPageCount }} <small>页</small></strong>
+          <button type="button" aria-label="增加桌面页数" :disabled="desktopPageCount >= 5" @click="setDesktopPageCount(desktopPageCount + 1)">＋</button>
+        </div>
+      </div>
       <div class="sizes">
         <button
           v-for="s in WIDGET_SIZES"
@@ -235,7 +225,7 @@ function showToast(text) {
           </div>
 
           <div class="mock-widget-preview">
-            <WidgetView type="date-card" :glass="draft.widgetGlass" />
+            <WidgetView type="date-card" />
           </div>
 
           <div class="mock-grid">
@@ -243,18 +233,16 @@ function showToast(text) {
               v-for="(g, i) in glyphs.slice(0, 4)"
               :key="i"
               class="mock-icon"
-              :class="{ 'is-glass': draft.iconGlass }"
             >
               <svg viewBox="0 0 24 24"><path :d="g" /></svg>
             </div>
           </div>
           <div class="mock-dock">
-            <div class="mock-icon" :class="{ 'is-glass': draft.iconGlass }"><BeautifyIcon /></div>
+            <div class="mock-icon"><BeautifyIcon /></div>
             <div
               v-for="g in glyphs.slice(0, 3)"
               :key="g"
               class="mock-icon"
-              :class="{ 'is-glass': draft.iconGlass }"
             >
               <svg viewBox="0 0 24 24"><path :d="g" /></svg>
             </div>
@@ -290,78 +278,6 @@ function showToast(text) {
           <span v-for="w in WALLPAPERS" :key="w.id">{{ w.name }}</span>
         </div>
         <input ref="fileInput" type="file" accept="image/*" hidden @change="onUpload" />
-      </div>
-
-      <div class="group">
-        <h2>透明效果</h2>
-
-        <div class="glass-options">
-          <div
-            class="glass-option"
-            :class="{ active: draft.widgetGlass }"
-            @click="toggleWidgetGlass"
-          >
-            <div class="option-content">
-              <div class="option-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <rect x="3" y="3" width="18" height="18" rx="5" />
-                  <path d="M3 14l5-4 4 4 4-3 5 4" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                </svg>
-              </div>
-              <div class="option-text">
-                <span class="option-title">组件透明</span>
-                <p class="option-desc">背景透出壁纸</p>
-              </div>
-            </div>
-            <div class="toggle-switch" :class="{ checked: draft.widgetGlass }">
-              <span class="toggle-handle" />
-            </div>
-          </div>
-
-          <div
-            class="glass-option"
-            :class="{ active: draft.iconGlass }"
-            @click="toggleIconGlass"
-          >
-            <div class="option-content">
-              <div class="option-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <rect x="3" y="3" width="18" height="18" rx="6" />
-                  <path d="M7 8a9 9 0 0 1 10 0" stroke-linecap="round" />
-                  <circle cx="12" cy="13" r="2.5" />
-                </svg>
-              </div>
-              <div class="option-text">
-                <span class="option-title">图标透明</span>
-                <p class="option-desc">背景透出壁纸</p>
-              </div>
-            </div>
-            <div class="toggle-switch" :class="{ checked: draft.iconGlass }">
-              <span class="toggle-handle" />
-            </div>
-          </div>
-        </div>
-
-        <transition name="slide-fade">
-          <div v-if="draft.widgetGlass || draft.iconGlass" class="tints-panel">
-            <div class="tints-header">
-              <span>色调</span>
-            </div>
-            <div class="tints-grid">
-              <button
-                v-for="tint in GLASS_TINTS"
-                :key="tint.id"
-                class="tint-option"
-                :class="{ active: draft.glassTint === tint.id }"
-                @click="pickGlassTint(tint.id)"
-              >
-                <span class="tint-color" :style="{ background: tint.accent }" />
-                <span class="tint-name">{{ tint.name }}</span>
-              </button>
-            </div>
-          </div>
-        </transition>
       </div>
 
       <div class="group">
@@ -493,6 +409,25 @@ function showToast(text) {
   padding: 18px 22px 40px;
   background: #ffffff;
 }
+
+.page-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 16px;
+  margin: 0 0 20px;
+  border: 1px solid #eeeeef;
+  border-radius: 16px;
+  background: #fafafa;
+}
+.page-setting h2 { margin: 0 0 5px; font-size: 14px; font-weight: 550; color: #333; }
+.page-setting p { margin: 0; color: #999; font-size: 11px; line-height: 1.5; }
+.page-count-control { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.page-count-control button { width: 30px; height: 30px; border: 1px solid #e7e7e7; border-radius: 50%; color: #454545; background: #fff; font-size: 18px; line-height: 1; cursor: pointer; }
+.page-count-control button:disabled { opacity: .35; cursor: default; }
+.page-count-control strong { min-width: 35px; text-align: center; font-size: 15px; font-weight: 550; }
+.page-count-control small { color: #888; font-size: 11px; font-weight: 400; }
 
 .sizes {
   display: flex;

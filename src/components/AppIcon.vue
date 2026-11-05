@@ -24,7 +24,7 @@ const customIcon = computed(() => {
 <template>
   <button class="app" type="button" :data-app="app.id" :aria-label="app.pending ? `${app.name}，敬请期待` : app.name" :aria-disabled="app.pending || undefined" @click="openApp(app)">
     <div class="app-icon" :class="{ 'is-glass': isGlass && !frosted, 'is-frosted': frosted }">
-      <SolidAppIcon v-if="frosted" :name="app.id" />
+      <SolidAppIcon v-if="frosted" :name="app.id" class="frosted-symbol" />
       <img
         v-else-if="customIcon"
         :src="customIcon"
@@ -61,9 +61,9 @@ const customIcon = computed(() => {
   height: var(--icon-size);
   border-radius: var(--icon-radius);
   overflow: hidden;
-  background: var(--icon-bg, #ffffff);
+  background: transparent;
   color: var(--icon-fg, #2e2e33);
-  box-shadow: var(--icon-shadow, 0 4px 14px rgba(40, 40, 50, 0.08));
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,12 +124,13 @@ const customIcon = computed(() => {
 }
 
 .app-icon.is-frosted {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.38));
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  color: #454850;
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
-  backdrop-filter: blur(18px) saturate(130%);
-  box-shadow: 0 5px 18px rgba(55, 65, 80, 0.09), inset 0 1px 2px rgba(255, 255, 255, 0.95);
+  background: transparent;
+  border: 0;
+  color: #ffffff;
+  filter: drop-shadow(0 1px 2px rgba(30, 35, 45, 0.2));
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 5px 16px rgba(35, 42, 52, 0.06);
 }
 .app-icon.is-frosted :deep(svg) {
   width: 45%;

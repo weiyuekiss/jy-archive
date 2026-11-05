@@ -15,6 +15,7 @@ const emit = defineEmits(['toast'])
 const avatarInput = ref(null)
 const isFlipping = ref(false)
 const showDeleteModal = ref(false)
+const showClearModal = ref(false)
 let flipTimer = null
 
 async function switchProfile(id) {
@@ -104,11 +105,14 @@ async function handleSaveProfile() {
 }
 
 function handleClearProfile() {
-  if (confirm('确定要清空所有已填写的用户人设信息吗？')) {
-    resetUserProfile()
-    persistProfile()
-    emit('toast', '已清空人设，恢复为空白状态')
-  }
+  showClearModal.value = true
+}
+
+function confirmClearProfile() {
+  resetUserProfile()
+  persistProfile()
+  showClearModal.value = false
+  emit('toast', '已清空人设，恢复为空白状态')
 }
 
 const hasProfileData = computed(() => {
@@ -157,7 +161,7 @@ const hasProfileData = computed(() => {
           </span>
         </div>
         <p class="preview-bio">
-          {{ userProfile.bio || '尚未撰写自我介绍。在下方配置专属用户人设，让 AI 更好地感知并契合你的对话风格。' }}
+          {{ userProfile.bio || '填写下方资料，设置称呼与交流偏好。' }}
         </p>
       </div>
         </div>
@@ -251,10 +255,7 @@ const hasProfileData = computed(() => {
 
       <!-- 职业（可填自由职业） -->
       <div class="field-item">
-        <label class="field-label">
-          <span>职业</span>
-          <span class="sub-tip">（也可以填自由职业）</span>
-        </label>
+        <label class="field-label"><span>职业</span></label>
         <div class="input-wrap">
           <input
             v-model="userProfile.occupation"
@@ -265,7 +266,6 @@ const hasProfileData = computed(() => {
         </div>
 
         <div class="quick-tags">
-          <span class="quick-hint">灵感参考:</span>
           <button
             v-for="c in careerPills"
             :key="c"
@@ -282,21 +282,21 @@ const hasProfileData = computed(() => {
     <div class="k-card">
       <div class="card-head">
         <div class="title-with-badge">
-          <span class="section-title">用户是个什么样的人</span>
+          <span>自我介绍</span>
         </div>
         <span class="char-count">{{ userProfile.bio?.length || 0 }} 字</span>
       </div>
 
       <div class="field-item">
         <label class="field-label">
-          <span>自我介绍与交流习惯</span>
+          <span>自我介绍</span>
           <span class="sub-tip">让 AI 深入理解你的性格、沟通偏好与日常节奏</span>
         </label>
         <div class="textarea-wrap">
           <textarea
             v-model="userProfile.bio"
             rows="6"
-            placeholder="介绍一下你自己：平时喜欢怎样的说话方式？性格偏向随和还是严谨？有什么特别的兴趣爱好或日常状态？希望 AI 扮演怎样的角色陪伴你..."
+            placeholder="说说你的兴趣、性格，以及偏好的交流方式…"
             class="k-textarea"
           />
         </div>
@@ -304,11 +304,25 @@ const hasProfileData = computed(() => {
     </div>
 
     <transition name="modal-fade">
+      <div v-if="showClearModal" class="edit-modal-backdrop profile-clear-backdrop" @click.self="showClearModal = false">
+        <section class="edit-modal profile-clear-modal" role="dialog" aria-modal="true" aria-labelledby="clear-profile-title">
+          <button class="modal-close" type="button" aria-label="关闭" @click="showClearModal = false">×</button>
+          <span class="modal-kicker">清空确认</span>
+          <h2 id="clear-profile-title">清空已填写的人设？</h2>
+          <p>这会移除当前人设中的姓名、头像、生日、职业和自我介绍，且无法撤销。</p>
+          <div class="modal-actions">
+            <button class="cancel-btn" type="button" @click="showClearModal = false">取消</button>
+            <button class="save-btn clear-confirm-btn" type="button" @click="confirmClearProfile">确认清空</button>
+          </div>
+        </section>
+      </div>
+    </transition>
+
+    <transition name="modal-fade">
       <div v-if="showDeleteModal" class="edit-modal-backdrop profile-delete-backdrop" @click.self="showDeleteModal = false" @keyup.esc="showDeleteModal = false">
         <section class="edit-modal profile-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-profile-title">
           <button class="modal-close" type="button" aria-label="关闭" @click="showDeleteModal = false">×</button>
-          <div class="delete-profile-mark" aria-hidden="true">✳</div>
-          <span class="modal-kicker">A LITTLE GOODBYE</span>
+          <span class="modal-kicker">删除确认</span>
           <h2 id="delete-profile-title">删除这份人设？</h2>
           <p>「{{ userProfile.name || '未命名人设' }}」将从你的个人资料中移除。删除后无法恢复。</p>
           <div class="modal-actions">

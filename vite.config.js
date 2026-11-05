@@ -2,8 +2,21 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
+import { execFileSync } from 'node:child_process'
+
+function getGitRevision() {
+  try {
+    return execFileSync('git', ['rev-parse', '--short=8', 'HEAD'], { encoding: 'utf8' }).trim()
+  } catch {
+    return 'local'
+  }
+}
 
 export default defineConfig(({ command }) => ({
+  define: {
+    __APP_VERSION__: JSON.stringify(`${process.env.npm_package_version || '0.1.0'}+${getGitRevision()}`),
+    __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString())
+  },
   base: command === 'serve' ? '/' : '/jy-archive/',
   plugins: [
     vue(),

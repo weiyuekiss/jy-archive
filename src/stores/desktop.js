@@ -5,14 +5,19 @@ import { loadValue, loadWidgets, saveValue, saveWidgets } from './db'
 
 // [{ uid, type, x, y, w, h, data }]，x / y 从 0 开始
 export const desktopWidgets = reactive([])
+export const desktopPageCount = ref(1)
+export const currentDesktopPage = ref(0)
+export const appPositions = reactive({})
 
 let saveTimer = null
 let loadedWidgets = false
-Promise.all([loadWidgets(), loadValue('home-layout-v1')]).then(async ([list, initialized]) => {
+Promise.all([loadWidgets(), loadValue('home-layout-v1'), loadValue('desktop-pages'), loadValue('app-positions')]).then(async ([list, initialized, savedPageCount, savedAppPositions]) => {
+  desktopPageCount.value = Math.max(1, Math.min(5, Number(savedPageCount) || 1))
+  if (savedAppPositions && typeof savedAppPositions === 'object') Object.assign(appPositions, savedAppPositions)
   if (!initialized) {
     const placements = [
       { type: 'clock-bold', x: 0, y: 0, w: 4, h: 2 },
-      { type: 'couple-day', x: 0, y: 2, w: 2, h: 2 }
+      { type: 'clock-analog', x: 0, y: 2, w: 2, h: 2 }
     ]
     const selected = placements.map((placement) => ({
       ...(list.find((item) => item.type === placement.type) || { uid: `${placement.type}-${Date.now()}` }),
@@ -37,73 +42,78 @@ Promise.all([loadWidgets(), loadValue('home-layout-v1')]).then(async ([list, ini
     await saveWidgets(desktopWidgets)
     await saveValue('home-layout-v1', true)
   } else {
-    desktopWidgets.splice(0, desktopWidgets.length, ...list)
+    desktopWidgets.splice(0, desktopWidgets.length, ...list.map((item) => ({ ...item, page: Number.isInteger(item.page) ? item.page : 0 })))
   }
   loadedWidgets = true
 })
 watch(
-  desktopWidgets,
+  [desktopWidgets, desktopPageCount, appPositions],
   () => {
     if (!loadedWidgets) return
     clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => saveWidgets(desktopWidgets), 300)
+    saveTimer = setTimeout(() => {
+      saveWidgets(desktopWidgets)
+      saveValue('desktop-pages', desktopPageCount.value)
+      saveValue('app-positions', appPositions)
+    }, 300)
   },
   { deep: true }
 )
 
+export function setDesktopPageCount(count) {
+  const nextCount = Math.max(1, Math.min(5, Math.floor(Number(count) || 1)))
+  desktopPageCount.value = nextCount
+  for (const widget of desktopWidgets) widget.page = Math.min(Number(widget.page) || 0, nextCount - 1)
+  for (const position of Object.values(appPositions)) position.page = Math.min(Number(position.page) || 0, nextCount - 1)
+  currentDesktopPage.value = Math.min(currentDesktopPage.value, nextCount - 1)
+}
+
 // 已被小组件占用的格子索引（y * 列数 + x），ignoreUid 用于拖动时排除自身
-export function occupiedCells(ignoreUid = null) {
-  const cells = new Set([10, 11, 14, 15])
+export function occupiedCells(ignoreUid = null, page = currentDesktopPage.value, ignoreAppId = null) {
+  const cells = new Set()
   for (const item of desktopWidgets) {
-    if (item.uid === ignoreUid) continue
-    for (let dy = 0; dy < item.h; dy++) {
-      for (let dx = 0; dx < item.w; dx++) {
-        cells.add((item.y + dy) * GRID_COLS + item.x + dx)
-      }
-    }
+    if (item.uid === ignoreUid || (Number(item.page) || 0) !== page) continue
+    for (let dy = 0; dy < item.h; dy++) for (let dx = 0; dx < item.w; dx++) cells.add((item.y + dy) * GRID_COLS + item.x + dx)
+  }
+  for (const [id, pos] of Object.entries(appPositions)) {
+    if (id === ignoreAppId || (Number(pos.page) || 0) !== page) continue
+    cells.add(pos.y * GRID_COLS + pos.x)
   }
   return cells
 }
 
-// 判断 w×h 的区域放在 (x, y) 是否越界或与其他小组件重叠
-export function canPlace(x, y, w, h, ignoreUid = null) {
+export function canPlace(x, y, w, h, ignoreUid = null, page = currentDesktopPage.value, ignoreAppId = null) {
   if (x < 0 || y < 0 || x + w > GRID_COLS || y + h > GRID_ROWS) return false
-  const used = occupiedCells(ignoreUid)
-  for (let dy = 0; dy < h; dy++) {
-    for (let dx = 0; dx < w; dx++) {
-      if (used.has((y + dy) * GRID_COLS + x + dx)) return false
-    }
-  }
+  const used = occupiedCells(ignoreUid, page, ignoreAppId)
+  for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) if (used.has((y + dy) * GRID_COLS + x + dx)) return false
   return true
 }
 
-// 从左上角开始找第一个放得下的位置；放不下返回 false
+export function moveWidget(uid, x, y, page = currentDesktopPage.value) {
+  const item = desktopWidgets.find((w) => w.uid === uid)
+  if (!item || !canPlace(x, y, item.w, item.h, uid, page)) return false
+  item.x = x
+  item.y = y
+  item.page = page
+  return true
+}
+
+export function moveApp(id, x, y, page = currentDesktopPage.value) {
+  if (!canPlace(x, y, 1, 1, null, page, id)) return false
+  appPositions[id] = { x, y, page }
+  return true
+}
+
 export function addWidget(def) {
   for (let y = 0; y <= GRID_ROWS - def.h; y++) {
     for (let x = 0; x <= GRID_COLS - def.w; x++) {
-      if (canPlace(x, y, def.w, def.h)) {
-        desktopWidgets.push({
-          uid: `${def.id}-${Date.now()}`,
-          type: def.id,
-          x,
-          y,
-          w: def.w,
-          h: def.h
-        })
+      if (canPlace(x, y, def.w, def.h, null, 0)) {
+        desktopWidgets.push({ uid: `${def.id}-${Date.now()}`, type: def.id, x, y, w: def.w, h: def.h, page: 0 })
         return true
       }
     }
   }
   return false
-}
-
-// 移动到目标格子；目标不可用时不移动并返回 false
-export function moveWidget(uid, x, y) {
-  const item = desktopWidgets.find((w) => w.uid === uid)
-  if (!item || !canPlace(x, y, item.w, item.h, uid)) return false
-  item.x = x
-  item.y = y
-  return true
 }
 
 // 更新小组件的自定义数据（如拍立得图片），合并到 item.data

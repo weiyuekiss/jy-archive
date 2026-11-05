@@ -2,6 +2,8 @@ import { ref } from 'vue'
 import { registerSW } from 'virtual:pwa-register'
 
 export const updateAvailable = ref(false)
+export const appVersion = __APP_VERSION__
+export const appBuildTime = __APP_BUILD_TIME__
 
 let updateServiceWorker
 let updateCheckPromise

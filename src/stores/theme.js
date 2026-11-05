@@ -2,15 +2,15 @@
 import { reactive, watch } from 'vue'
 import { loadValue, saveValue } from './db'
 
-// 7 个预设壁纸选项（加上“相册”自定义项刚好 8 列）
+// 7 个低饱和浅色渐变壁纸（加上“相册”自定义项）
 export const WALLPAPERS = [
-  { id: 'white', name: '纯白', css: '#ffffff' },
-  { id: 'cream', name: '暖白', css: '#f6f5f1' },
-  { id: 'fog', name: '浅雾', css: 'linear-gradient(180deg, #f2f3f5 0%, #e5e7eb 100%)' },
-  { id: 'peach', name: '杏粉', css: 'linear-gradient(180deg, #fef2f2 0%, #fed7aa 100%)' },
-  { id: 'sage', name: '淡绿', css: 'linear-gradient(180deg, #f0fdf4 0%, #bbf7d0 100%)' },
-  { id: 'sky', name: '空蓝', css: 'linear-gradient(180deg, #f0f9ff 0%, #bae6fd 100%)' },
-  { id: 'dark', name: '夜色', css: 'linear-gradient(180deg, #2a2b2e 0%, #17181a 100%)' }
+  { id: 'mint', name: '雾感薄荷', css: 'linear-gradient(135deg, #b8dfcc 0%, #cce4c7 52%, #e8e5c8 100%)' },
+  { id: 'cream', name: '晨光奶油', css: 'linear-gradient(145deg, #f0d9a8 0%, #e8c99e 48%, #f3e3c1 100%)' },
+  { id: 'sky', name: '浅天空', css: 'linear-gradient(160deg, #b6d5e8 0%, #b9dfdc 55%, #e5dfc7 100%)' },
+  { id: 'lavender', name: '淡薰衣草', css: 'linear-gradient(145deg, #c9b9e2 0%, #ddc4dc 52%, #ead7b0 100%)' },
+  { id: 'blush', name: '柔粉晨光', css: 'linear-gradient(135deg, #e8b7c9 0%, #cbb8df 38%, #edcf9f 72%, #eee4cf 100%)' },
+  { id: 'sage', name: '清浅鼠尾草', css: 'linear-gradient(150deg, #b9d0b9 0%, #d3d6ad 50%, #e9d9b4 100%)' },
+  { id: 'blue-fog', name: '云雾浅蓝', css: 'linear-gradient(145deg, #b3c9e0 0%, #bad7d5 52%, #e6d8bd 100%)' }
 ]
 
 // 5 个低饱和韩系液态玻璃色调预设（Korean Muted Glass Tints）
@@ -117,8 +117,8 @@ export const ICON_STYLES = [
 ]
 
 export const theme = reactive({
-  // 壁纸 id，如 'white', 'cream' 或 'custom'
-  wallpaper: 'white',
+  // 壁纸 id，如 'mint', 'cream' 或 'custom'
+  wallpaper: 'blush',
   // 自定义壁纸 Base64 或 URL
   customImage: '',
   // 图标风格 id
@@ -150,6 +150,27 @@ export function glassVars(tintId = 'clear') {
     '--glass-icon-bg': found.iconBg,
     '--glass-border': found.border,
     '--glass-sheen': found.sheen
+  }
+}
+
+export function wallpaperSurfaceVars(wallpaperId) {
+  const surfaces = {
+    mint: ['rgba(226, 241, 231, 0.88)', '#476454'],
+    cream: ['rgba(250, 240, 220, 0.9)', '#6b5b43'],
+    sky: ['rgba(225, 239, 246, 0.9)', '#466171'],
+    lavender: ['rgba(237, 230, 246, 0.9)', '#5d506f'],
+    blush: ['rgba(245, 228, 238, 0.9)', '#6b5263'],
+    sage: ['rgba(229, 239, 226, 0.9)', '#4d624d'],
+    'blue-fog': ['rgba(226, 236, 246, 0.9)', '#4d6072'],
+    custom: ['rgba(242, 239, 232, 0.88)', '#4c4b47']
+  }
+  const [surface, foreground] = surfaces[wallpaperId] || surfaces.mint
+  return {
+    '--icon-bg': surface,
+    '--icon-fg': foreground,
+    '--dock-bg': surface,
+    '--dock-border': 'rgba(255, 255, 255, 0.42)',
+    '--dock-highlight': 'rgba(255, 255, 255, 0.42)'
   }
 }
 
