@@ -70,7 +70,11 @@ function appPos(app, i) {
   for (let y = 0; y < GRID_ROWS; y++) for (let x = 0; x < GRID_COLS; x++) if (canPlace(x, y, 1, 1, null, 0, app.id)) return { x, y, page: 0 }
   return { x: 0, y: 0, page: 0 }
 }
-const visibleApps = computed(() => props.apps.filter((app) => (Number(appPos(app, props.apps.indexOf(app)).page) || 0) === currentDesktopPage.value))
+const visibleApps = computed(() => props.apps.filter((app) => {
+  const position = appPositions[app.id]
+  if (!position) return currentDesktopPage.value === 0
+  return (Number(position.page) || 0) === currentDesktopPage.value
+}))
 function appStyle(app, i) {
   const p = appPos(app, i)
   return { gridColumn: p.x + 1, gridRow: p.y + 1, transform: appDrag.id === app.id ? `translate(${appDrag.dx}px, ${appDrag.dy}px) scale(1.08)` : null, zIndex: appDrag.id === app.id ? 3 : 1 }

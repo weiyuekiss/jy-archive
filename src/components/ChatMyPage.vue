@@ -74,7 +74,7 @@ function selectSound(kind, event) {
 <template>
   <section class="account" :class="{ 'account-detail': page }">
     <template v-if="!page">
-      <section class="identity" aria-label="个人资料">
+      <section class="identity-card" aria-label="个人资料">
         <button class="identity-avatar" type="button" aria-label="编辑头像与个人资料" :disabled="!isSettingsLoaded" @click="openPage('edit')">
           <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="我的头像" />
           <svg v-else viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="30" r="12" /><path d="M17 70c0-17 9-25 23-25s23 8 23 25" /></svg>
@@ -162,8 +162,8 @@ function selectSound(kind, event) {
 .account button:disabled{cursor:default;opacity:.45}
 .account svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .account button:focus-visible,.account input:focus-visible,.account textarea:focus-visible,.upload-sound:focus-within{outline:2px solid var(--account-accent);outline-offset:4px}
-.identity{display:flex;align-items:flex-start;gap:20px;padding:32px 0 43px}
-.identity-avatar{display:grid;place-items:center;width:78px;height:78px;flex:none;padding:0;border:0;border-radius:50%;overflow:hidden;background:#e8eeeb;color:#91aaa0}
+.identity-card{display:flex;align-items:center;gap:18px;margin:12px 0 31px;padding:21px 19px;border:1px solid #e7ece9;border-radius:22px;background:linear-gradient(145deg,#ffffffed,#f5f8f6e8);box-shadow:0 10px 28px #30483e0b}
+.identity-avatar{display:grid;place-items:center;width:78px;height:78px;flex:none;padding:0;border:0;border-radius:50%;overflow:hidden;background:#e8eeeb;color:#91aaa0;box-shadow:0 0 0 4px #fff,0 3px 12px #43594c16}
 .identity-avatar img{width:100%;height:100%;object-fit:cover}
 .identity-avatar svg{width:100%;height:100%;fill:currentColor;stroke:none}
 .identity-copy{min-width:0;flex:1;padding-top:2px}
@@ -227,6 +227,6 @@ function selectSound(kind, event) {
 .cancel-edit{display:block;min-height:44px;margin:8px auto 0;padding:0 18px;border:0;background:transparent;color:var(--account-muted);font-size:13px!important}
 .save-error{color:#a13737;font-size:13px;line-height:1.6}
 @media(hover:hover){.account-entry:hover{background:#f6f8f6}.edit-link:hover,.sound-actions button:hover{color:#245c50}}
-@media(max-width:360px){.identity{gap:14px}.identity-avatar{width:68px;height:68px}.identity-copy h1{font-size:23px}.account-entry{padding:16px 14px;gap:12px}}
+@media(max-width:360px){.identity-card{gap:14px;padding:17px 14px}.identity-avatar{width:68px;height:68px}.identity-copy h1{font-size:23px}.account-entry{padding:16px 14px;gap:12px}}
 @media(prefers-reduced-motion:reduce){.account *,.account *:before{transition:none!important}}
 </style>

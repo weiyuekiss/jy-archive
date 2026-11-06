@@ -112,6 +112,7 @@ function downloadSelectors() {
 const fontName = (id) => theme.fonts.find((font) => font.id === id)?.name || '系统默认'
 const fontFamilyFor = (id) => theme.fonts.find((font) => font.id === id)?.family || 'system-ui, sans-serif'
 const chatPreviewStyle = computed(() => ({ fontFamily: fontFamilyFor(theme.fontAssignments.chat) }))
+const chatBubblePreviewStyle = computed(() => ({ fontFamily: fontFamilyFor(theme.fontAssignments.chatBubble) }))
 function openCssEditor() { fontDraft.value = theme.chatBeautifyCss || ''; fontDialogOpen.value = true }
 function saveBeautifyCss() {
   const css = fontDraft.value.slice(0, 30000)
@@ -456,6 +457,22 @@ function showToast(text) {
             <option v-for="font in theme.fonts" :key="font.id" :value="font.id">{{ font.name }}</option>
           </select>
         </label>
+      </div>
+      <div class="group">
+        <h2>聊天气泡内字体</h2>
+        <p class="font-help">仅更改聊天消息气泡中的正文，不影响聊天页面其他文字；选择系统默认可恢复全局聊天字体。</p>
+        <label class="font-app-row">
+          <span>消息正文</span>
+          <select v-model="theme.fontAssignments.chatBubble">
+            <option value="">跟随聊天全局字体（{{ fontName(theme.fontAssignments.chat) }}）</option>
+            <option v-for="font in theme.fonts" :key="font.id" :value="font.id">{{ font.name }}</option>
+          </select>
+        </label>
+        <div class="chat-style-preview bubble-font-preview" :style="chatBubblePreviewStyle">
+          <span class="preview-bubble">这是对方发送的气泡字体预览。</span>
+          <span class="preview-bubble mine">这是我发送的气泡字体预览。</span>
+          <small>当前气泡字体：{{ fontName(theme.fontAssignments.chatBubble || theme.fontAssignments.chat) }}</small>
+        </div>
       </div>
       <div class="group">
         <h2>字体预览</h2>
