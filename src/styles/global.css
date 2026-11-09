@@ -1,0 +1,44 @@
+/* 全局字体：破晓像素体 */
+@import url("https://fontsapi.zeoseven.com/870/main/result.css");
+
+:root {
+  --cols: 4;                         /* 横向 4 格 */
+  --rows: 6;                         /* 纵向 6 格 */
+  --icon-size: min(15vw, 64px);
+  --icon-radius: 24%;
+  --side-pad: 6vw;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  background: #f7f8fa;
+  overflow: hidden;
+  font-family: "PoxiaoPixel", -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-weight: normal;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+html {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px !important;
+  touch-action: manipulation;
+}
