@@ -39,6 +39,21 @@ npm run build
 npm run preview
 ```
 
+## 部署到 Netlify / 火云等静态托管
+
+生产构建默认部署在网站根目录 `/`。仓库包含 `netlify.toml`，Netlify 从仓库构建时会自动读取。
+
+- 构建命令：`npm run build`（首次安装依赖使用 `npm ci`）
+- 发布 / 输出目录：`dist`
+- Node.js：22.12 或更新的受支持版本
+- 网站资源路径：`/`，不要将环境变量 `VITE_BASE_PATH` 设为 `/jy-archive/`
+
+手动上传到 Netlify 或火云时，先运行 `npm run build`，再上传 **dist 目录里的完整构建产物**（`index.html`、`assets/` 等），不要上传源码目录或只上传 `index.html`。站点入口应对应构建后的 `dist/index.html`。静态托管无需运行 Vite 开发服务器。
+
+如果需要部署到子目录，在构建环境设置 `VITE_BASE_PATH=/你的子目录/`。GitHub Pages 工作流已单独设置 `/jy-archive/`，不影响根目录部署。
+
+重新部署后若仍加载旧页面，先尝试强制刷新或关闭再重新打开该站点。不要为排查白屏而清除整个站点数据，里面可能有角色、聊天记录和 API 配置。
+
 ## 部署到 Cloudflare Workers
 
 仓库包含 `wrangler.jsonc`，可将 Vite 生成的 `dist/` 静态文件作为 Workers Static Assets 部署，并将单页应用路由回退到 `index.html`。项目根目录执行：

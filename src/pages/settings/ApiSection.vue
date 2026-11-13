@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import RetroSticker from '@/components/RetroSticker.vue'
 import {
   apiSettings,
   getCurrentPreset,
@@ -113,7 +114,7 @@ function handleSaveCurrentModel() {
     <div class="k-card">
       <div class="card-head">
         <div class="title-with-badge">
-          <span class="section-title">服务预设</span>
+          <span class="section-title"><RetroSticker kind="folder"/>服务预设</span>
           <span class="count-pill">{{ apiSettings.presets.length }} 个预设</span>
         </div>
         <button class="k-action-btn" type="button" @click="handleAddPreset">
@@ -137,7 +138,7 @@ function handleSaveCurrentModel() {
     <!-- 接口连接配置 -->
     <div class="k-card">
       <div class="card-head">
-        <span class="section-title">接口连接配置</span>
+        <span class="section-title"><RetroSticker kind="network"/>接口连接配置</span>
         <span class="hint-tag">兼容常见服务与本地接口</span>
       </div>
 
@@ -188,7 +189,7 @@ function handleSaveCurrentModel() {
     <div class="k-card">
       <div class="card-head">
         <div class="title-with-badge">
-          <span class="section-title">模型选择</span>
+          <span class="section-title"><RetroSticker kind="chip"/>模型选择</span>
           <span v-if="currentPreset.models?.length" class="count-pill">{{ currentPreset.models.length }} 个可用</span>
         </div>
         <button class="k-action-btn primary" type="button" :disabled="isFetchingModels" @click="handleFetchModels">

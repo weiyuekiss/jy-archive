@@ -12,33 +12,35 @@ function getGitRevision() {
   }
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(() => {
+  // Root deployment by default; GitHub Pages supplies its repository subpath.
+  const configuredBase = process.env.VITE_BASE_PATH || '/'
+  const base = `/${configuredBase.split('/').filter(Boolean).join('/')}${configuredBase.split('/').filter(Boolean).length ? '/' : ''}`
+  return ({
   define: {
     __APP_VERSION__: JSON.stringify(`${process.env.npm_package_version || '0.1.0'}+${getGitRevision()}`),
     __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString())
   },
-  base: command === 'serve' ? '/' : '/jy-archive/',
+  base,
   plugins: [
     vue(),
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        id: '/jy-archive/',
+        id: base,
         name: 'JY Archive',
         short_name: 'JY Archive',
         description: '把日常，慢慢收进来。',
         lang: 'zh-CN',
-        start_url: '/jy-archive/',
-        scope: '/jy-archive/',
+        start_url: base,
+        scope: base,
         display: 'standalone',
         orientation: 'portrait',
         theme_color: '#ffffff',
         background_color: '#f7f8fa',
         icons: [
-          { src: '/jy-archive/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/jy-archive/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/jy-archive/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: `${base}favicon.svg`, sizes: 'any', type: 'image/svg+xml' }
         ]
       },
       workbox: {
@@ -66,4 +68,5 @@ export default defineConfig(({ command }) => ({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   }
-}))
+  })
+})

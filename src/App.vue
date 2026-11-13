@@ -95,7 +95,9 @@ watch(statusThemeColor, (color) => {
     <AppDock :apps="dockApps" />
     <footer v-if="showBuildInfo" class="app-build-info" aria-label="应用版本信息">版本 {{ appVersion }} · 构建于 {{ new Date(appBuildTime).toLocaleString('zh-CN') }}</footer>
   </main>
-  <component :is="activeApp.page" v-if="activeApp" @close="closeApp" />
+  <KeepAlive>
+    <component :is="activeApp?.page" v-if="activeApp" :key="activeApp.id" @close="closeApp" />
+  </KeepAlive>
   <div v-if="chatErrorDialog" class="chat-error-backdrop" role="presentation" @click.self="chatErrorDialog = null"><section class="chat-error-card" role="alertdialog" aria-modal="true" aria-labelledby="chat-error-title"><div class="chat-error-mark" aria-hidden="true">!</div><div class="chat-error-eyebrow">CHAT REPLY FAILED</div><h2 id="chat-error-title">这次回复没有成功</h2><p class="chat-error-context">{{ chatErrorDialog.chatName }} · {{ chatErrorDialog.time }}</p><div class="chat-error-field"><span>错误码</span><strong>{{ chatErrorDialog.code }}</strong></div><div class="chat-error-field chat-error-message"><span>错误信息</span><pre>{{ chatErrorDialog.message }}</pre></div><div class="chat-error-actions"><button type="button" class="chat-error-close" @click="chatErrorDialog = null">关闭</button><button type="button" class="chat-error-copy" @click="copyChatError">{{ chatErrorDialog.copied ? '已复制' : '复制错误详情' }}</button></div><p class="chat-error-footnote">复制内容包含错误码、错误信息、聊天对象和发生时间，可直接发给 AI 协助排查。</p></section></div>
   <div v-if="showUpdatePrompt && !showWelcome" class="update-backdrop">
     <section class="update-dialog" role="alertdialog" aria-modal="true" aria-labelledby="update-title" aria-describedby="update-description">

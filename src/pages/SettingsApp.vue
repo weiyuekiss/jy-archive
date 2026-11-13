@@ -1,9 +1,11 @@
 <script setup>
-// 设置应用：IG 风格个人主页
+// 设置应用：Y2K 像素控制面板
 import { ref } from 'vue'
 import { exportAllData, replaceAllData } from '@/stores/db'
 import ApiSection from './settings/ApiSection.vue'
 import ProfileSection from './settings/ProfileSection.vue'
+import RetroComputer from '@/components/RetroComputer.vue'
+import RetroSticker from '@/components/RetroSticker.vue'
 
 const emit = defineEmits(['close'])
 
@@ -77,33 +79,33 @@ function goBack() {
 
 <template>
   <div class="settings-app">
-    <button class="settings-back-btn" type="button" aria-label="返回" @click="goBack">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
-    </button>
     <main class="app-content">
       <div class="retro-window" :class="{ 'settings-main-active': currentPage === 'main', 'settings-api-active': currentPage === 'api' }">
         <div class="window-titlebar">
-          <div class="window-title"><span class="window-gem">◆</span><span>JY 个人空间</span></div>
-          <div class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></div>
+          <div class="window-title"><RetroSticker kind="folder"/><span>JY 控制面板.exe</span></div>
+          <div class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button type="button" aria-label="关闭设置，返回桌面" @click="emit('close')">×</button></div>
         </div>
-        <div class="window-menu"><span>文件</span><span>编辑</span><span>查看</span><span>帮助</span></div>
+        <div class="window-menu"><span>文件(F)</span><span>编辑(E)</span><span>查看(V)</span><span>帮助(H)</span></div>
+        <div class="explorer-toolbar"><button type="button" @click="goBack"><span aria-hidden="true">◀</span> 返回</button><span class="address-label">地址(D)</span><div class="explorer-address"><RetroSticker kind="folder"/><span>我的电脑 / 控制面板{{ currentPage === 'api' ? ' / API 配置' : currentPage === 'profile' ? ' / 人设配置' : '' }}</span></div></div>
         <div class="window-body">
       <div v-if="currentPage === 'main'" class="main-page">
         <section class="settings-welcome">
-          <h2>设置</h2>
-          <p>配置服务与个人资料</p>
+          <div class="welcome-copy"><span class="retro-eyebrow">PERSONAL COMPUTER / 2000</span><h2>欢迎来到<br>本喵的控制面板</h2><p>调试电波，整理人设，<br>把小小世界存进软盘里。</p><span class="system-label"><i/> SYSTEM READY !</span></div>
+          <RetroComputer class="welcome-computer"/>
+          <span class="welcome-serial">JY-OS © Y2K EDITION</span>
         </section>
+        <div class="settings-directory-heading"><span>▦ 选择一个设置项目</span><small>CONTROL PANEL</small></div>
         <section class="menu-section">
           <button class="menu-item" type="button" @click="navigateTo('api')">
-            <div class="menu-content"><span class="menu-title">API 配置</span></div>
+            <RetroSticker kind="network"/><div class="menu-content"><small class="item-filename">NETWORK.EXE</small><span class="menu-title">API 配置</span><span class="menu-desc">连接电波 · 服务预设与模型</span></div>
             <svg class="menu-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
           </button>
           <button class="menu-item" type="button" @click="navigateTo('profile')">
-            <div class="menu-content"><span class="menu-title">人设配置</span></div>
+            <RetroSticker kind="profile"/><div class="menu-content"><small class="item-filename">MY PROFILE.DAT</small><span class="menu-title">人设配置</span><span class="menu-desc">身份名片 · 记录独一份的你</span></div>
             <svg class="menu-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
           </button>
           <section class="data-storage-card" aria-label="数据存储">
-            <div class="data-storage-heading"><div><h3>数据存储</h3><p>将应用数据备份为文件，或从备份恢复。</p></div></div>
+            <div class="data-storage-heading"><RetroSticker kind="disk"/><div><small class="item-filename">BACKUP / DISK A:</small><h3>数据存储</h3><p>把回忆装进软盘，下次开机再见。</p></div><span class="disk-capacity" aria-hidden="true">1.44<br>MB</span></div>
             <div class="storage-actions">
               <button type="button" class="storage-action" @click="exportData">导出数据</button>
               <button type="button" class="storage-action primary" :disabled="isImporting" @click="chooseBackup">{{ isImporting ? '导入中…' : '导入数据' }}</button>
@@ -119,7 +121,7 @@ function goBack() {
       </div>
       <ProfileSection v-else-if="currentPage === 'profile'" @toast="showToast" @back="currentPage = 'main'" />
         </div>
-        <div class="window-status"><span>就绪</span><span>个人主页 · 在线</span></div>
+        <div class="window-status"><span>▣ 就绪 · 你的世界已准备好</span><span>JY-OS / Y2K EDITION</span></div>
       </div>
     </main>
 
@@ -133,4 +135,5 @@ function goBack() {
 </template>
 
 <style src="@/styles/settings.css"></style>
+<style scoped src="@/styles/settings-y2k.css"></style>
 

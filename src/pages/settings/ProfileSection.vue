@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import RetroSticker from '@/components/RetroSticker.vue'
 import {
   userProfile,
   profileSettings,
@@ -10,7 +11,7 @@ import {
   resetUserProfile
 } from '@/stores/settings'
 
-const emit = defineEmits(['toast'])
+const emit = defineEmits(['toast', 'back'])
 
 const avatarInput = ref(null)
 const isFlipping = ref(false)
@@ -178,7 +179,7 @@ const hasProfileData = computed(() => {
     <!-- 基础身份信息表单 -->
     <div class="k-card">
       <div class="card-head">
-        <span class="section-title">基础身份信息</span>
+        <span class="section-title"><RetroSticker kind="profile"/>基础身份信息</span>
         <span class="hint-tag">纯本地保存 · 无默认预设</span>
       </div>
 

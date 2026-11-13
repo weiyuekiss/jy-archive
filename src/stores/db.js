@@ -59,7 +59,10 @@ export async function saveValue(key, value) {
     const db = await openDB()
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
-      tx.oncomplete = () => resolve()
+      tx.oncomplete = () => {
+        if (key === 'jyos_characters') window.dispatchEvent(new Event('jyos-characters-updated'))
+        resolve()
+      }
       tx.onerror = () => reject(tx.error)
       tx.onabort = () => reject(tx.error || new Error(`保存 ${key} 的事务已中止`))
       tx.objectStore(STORE_NAME).put(serializableValue, key)
