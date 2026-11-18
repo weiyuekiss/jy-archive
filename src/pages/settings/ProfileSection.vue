@@ -130,9 +130,14 @@ const hasProfileData = computed(() => {
 
 <template>
   <div class="tab-page profile-settings-page">
-    <button class="profile-back-btn" type="button" aria-label="返回设置" @click="emit('back')">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
-    </button>
+    <header class="profile-page-heading">
+      <button class="profile-back-btn" type="button" aria-label="返回设置" @click="emit('back')">
+        <svg class="retro-back-arrow" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 2h2v2H6zM4 4h2v2H4zM2 6h2v4H2zM4 10h2v2H4zM6 12h2v2H6zM4 7h10v2H4z" /></svg>
+      </button>
+      <RetroSticker kind="profile" />
+      <div><h1>人设配置</h1><p>管理你的个人资料与交流偏好</p></div>
+    </header>
+    <div class="profile-window-caption"><span>当前人设</span><span aria-hidden="true">■ □ ×</span></div>
     <div class="polaroid-switcher">
       <button class="profile-step" type="button" aria-label="上一个人设" :disabled="profileSettings.profiles.length < 2" @click="switchProfile(profileSettings.profiles[(profileSettings.profiles.findIndex(p => p.id === profileSettings.currentProfileId) - 1 + profileSettings.profiles.length) % profileSettings.profiles.length].id)">‹</button>
       <div class="polaroid-stage" :class="{ flipping: isFlipping }">
@@ -283,7 +288,7 @@ const hasProfileData = computed(() => {
     <div class="k-card">
       <div class="card-head">
         <div class="title-with-badge">
-          <span>自我介绍</span>
+          <span class="section-title"><RetroSticker kind="folder"/>自我介绍</span>
         </div>
         <span class="char-count">{{ userProfile.bio?.length || 0 }} 字</span>
       </div>

@@ -12,6 +12,7 @@ const emit = defineEmits(['close'])
 const currentPage = ref('main') // 'main' | 'api' | 'profile'
 const backupInput = ref(null)
 const isImporting = ref(false)
+const showStorageDialog = ref(false)
 
 async function exportData() {
   try {
@@ -86,7 +87,7 @@ function goBack() {
           <div class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button type="button" aria-label="关闭设置，返回桌面" @click="emit('close')">×</button></div>
         </div>
         <div class="window-menu"><span>文件(F)</span><span>编辑(E)</span><span>查看(V)</span><span>帮助(H)</span></div>
-        <div class="explorer-toolbar"><button type="button" @click="goBack"><span aria-hidden="true">◀</span> 返回</button><span class="address-label">地址(D)</span><div class="explorer-address"><RetroSticker kind="folder"/><span>我的电脑 / 控制面板{{ currentPage === 'api' ? ' / API 配置' : currentPage === 'profile' ? ' / 人设配置' : '' }}</span></div></div>
+        <div class="explorer-toolbar"><button type="button" @click="goBack"><svg class="retro-back-arrow" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 2h2v2H6zM4 4h2v2H4zM2 6h2v4H2zM4 10h2v2H4zM6 12h2v2H6zM4 7h10v2H4z"/></svg> 返回</button><span class="address-label">地址(D)</span><div class="explorer-address"><RetroSticker kind="folder"/><span>我的电脑 / 控制面板{{ currentPage === 'api' ? ' / API 配置' : currentPage === 'profile' ? ' / 人设配置' : '' }}</span></div></div>
         <div class="window-body">
       <div v-if="currentPage === 'main'" class="main-page">
         <section class="settings-welcome">
@@ -94,33 +95,47 @@ function goBack() {
           <RetroComputer class="welcome-computer"/>
           <span class="welcome-serial">JY-OS © Y2K EDITION</span>
         </section>
-        <div class="settings-directory-heading"><span>▦ 选择一个设置项目</span><small>CONTROL PANEL</small></div>
-        <section class="menu-section">
-          <button class="menu-item" type="button" @click="navigateTo('api')">
-            <RetroSticker kind="network"/><div class="menu-content"><small class="item-filename">NETWORK.EXE</small><span class="menu-title">API 配置</span><span class="menu-desc">连接电波 · 服务预设与模型</span></div>
-            <svg class="menu-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+        <div class="settings-directory-heading"><span class="directory-caption"><RetroSticker kind="folder"/>选择一个设置项目</span><small>CONTROL PANEL</small><span class="directory-rule" aria-hidden="true"></span></div>
+        <section class="menu-section settings-icon-shortcuts" aria-label="设置项目">
+          <button class="menu-item" type="button" aria-label="进入 API 配置" @click="navigateTo('api')">
+            <RetroSticker kind="network"/><span class="menu-title">API 配置</span>
           </button>
-          <button class="menu-item" type="button" @click="navigateTo('profile')">
-            <RetroSticker kind="profile"/><div class="menu-content"><small class="item-filename">MY PROFILE.DAT</small><span class="menu-title">人设配置</span><span class="menu-desc">身份名片 · 记录独一份的你</span></div>
-            <svg class="menu-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+          <button class="menu-item" type="button" aria-label="进入人设配置" @click="navigateTo('profile')">
+            <RetroSticker kind="profile"/><span class="menu-title">人设配置</span>
           </button>
-          <section class="data-storage-card" aria-label="数据存储">
-            <div class="data-storage-heading"><RetroSticker kind="disk"/><div><small class="item-filename">BACKUP / DISK A:</small><h3>数据存储</h3><p>把回忆装进软盘，下次开机再见。</p></div><span class="disk-capacity" aria-hidden="true">1.44<br>MB</span></div>
-            <div class="storage-actions">
-              <button type="button" class="storage-action" @click="exportData">导出数据</button>
-              <button type="button" class="storage-action primary" :disabled="isImporting" @click="chooseBackup">{{ isImporting ? '导入中…' : '导入数据' }}</button>
-              <input ref="backupInput" class="backup-file-input" type="file" accept="application/json,.json" @change="importData">
-            </div>
-            <small>导入会覆盖当前应用数据，请先备份。</small>
-          </section>
+                <button class="menu-item storage-icon-button" type="button" aria-label="打开数据存储选项" @click="showStorageDialog = true">
+            <RetroSticker kind="disk"/><span class="menu-title">数据存储</span>
+          </button>
         </section>
+        <input ref="backupInput" class="backup-file-input" type="file" accept="application/json,.json" @change="importData">
       </div>
       <div v-else-if="currentPage === 'api'" class="settings-subpage">
-        <header class="settings-page-header"><button type="button" aria-label="返回设置" @click="currentPage = 'main'"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button><h1>API 配置</h1><span></span></header>
+        <header class="settings-page-header"><button type="button" aria-label="返回设置" @click="currentPage = 'main'"><svg class="retro-back-arrow" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 2h2v2H6zM4 4h2v2H4zM2 6h2v4H2zM4 10h2v2H4zM6 12h2v2H6zM4 7h10v2H4z"/></svg></button><h1>API 配置</h1><span></span></header>
         <ApiSection @toast="showToast" />
       </div>
       <ProfileSection v-else-if="currentPage === 'profile'" @toast="showToast" @back="currentPage = 'main'" />
         </div>
+        <transition name="modal-fade">
+          <div v-if="showStorageDialog" class="storage-dialog-backdrop" @click.self="showStorageDialog = false">
+            <section class="storage-dialog" role="dialog" aria-modal="true" aria-labelledby="storage-dialog-title">
+              <header class="storage-dialog-titlebar">
+                <h2 id="storage-dialog-title">数据存储</h2>
+                <button class="storage-dialog-close" type="button" aria-label="关闭并返回设置" @click="showStorageDialog = false">×</button>
+              </header>
+              <div class="storage-dialog-content">
+                <div class="storage-dialog-message">
+                  <RetroSticker kind="disk" />
+                  <p>选择要执行的操作。导入数据会覆盖当前应用数据，建议先导出备份。</p>
+                </div>
+                <div class="storage-dialog-actions">
+                  <button type="button" @click="exportData">导出数据</button>
+                  <button type="button" class="primary" :disabled="isImporting" @click="chooseBackup">{{ isImporting ? '导入中…' : '导入数据' }}</button>
+                  <button type="button" @click="showStorageDialog = false">返回</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </transition>
         <div class="window-status"><span>▣ 就绪 · 你的世界已准备好</span><span>JY-OS / Y2K EDITION</span></div>
       </div>
     </main>

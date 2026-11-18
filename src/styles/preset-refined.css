@@ -16,3 +16,58 @@
 .preset-setting-card.dragging{background:#f0e9f6;border:1px dashed #b8a1ca;box-shadow:inset 0 0 0 3px #f8f4fb}.preset-setting-card.dragging>*{opacity:0}
 .preset-drag-ghost{position:fixed;z-index:1000;box-sizing:border-box;display:flex;align-items:center;gap:13px;padding:17px 18px;border:1px solid #d4c2e3;border-radius:15px;background:#fff;box-shadow:0 18px 42px #59436933,0 3px 10px #59436915;pointer-events:none;transform:scale(1.025) rotate(-.6deg);opacity:.97;will-change:top,left}.preset-drag-ghost .preset-entry-copy small{white-space:pre-line}.preset-ghost-grip{flex:none;color:#b7a2c8;font-size:16px}.preset-detail-dialog footer button:disabled{opacity:.45;cursor:not-allowed}
 @media(prefers-reduced-motion:reduce){.preset-setting-card,.preset-setting-toggle i{transition:none}.preset-drag-ghost{transform:none}}
+
+.preset-config-page{--preset-paper:#f4f5f0;--preset-sheet:#fffefa;--preset-ink:#28332f;--preset-muted:#596760;--preset-line:#dce2da;--preset-accent:#386455;--preset-tint:#e6eee7;width:auto;height:auto;background:var(--preset-paper)}
+.preset-config-content{width:100%;height:100%;background:var(--preset-paper);color:var(--preset-ink)}
+.preset-config-header{grid-template-columns:44px 1fr 44px;background:var(--preset-paper);border-color:var(--preset-line);backdrop-filter:none}
+.preset-config-header>button:first-child{width:44px;height:44px;border-radius:8px;color:var(--preset-ink);background:transparent}
+.preset-config-header h2{font-size:16px;font-weight:650;letter-spacing:0;color:var(--preset-ink)}
+.preset-config-scroll{width:min(100%,740px);margin-inline:auto;padding:20px 18px 26px;background:transparent}
+.preset-current-name{min-height:76px;padding:12px 2px;border:0;border-bottom:1px solid var(--preset-line);border-radius:0;background:transparent}
+.preset-current-name .preset-name-copy small{color:var(--preset-muted);font-size:12px}
+.preset-current-name .preset-name-copy strong{color:var(--preset-ink);font-size:22px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+.preset-current-name svg,.preset-parameters summary svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.preset-current-name svg{margin-right:12px;color:var(--preset-accent)}
+.preset-parameters{border-bottom:1px solid var(--preset-line)}
+.preset-parameters summary{display:flex;align-items:center;justify-content:space-between;min-height:46px;padding:0 12px 0 2px;list-style:none;cursor:pointer;color:var(--preset-ink);font-size:13px}
+.preset-parameters summary::-webkit-details-marker{display:none}
+.preset-parameters[open] summary svg{transform:rotate(180deg)}
+.preset-parameters-group{margin:0 0 12px;border-color:var(--preset-line);border-radius:8px;background:var(--preset-sheet)}
+.preset-parameters-group .preset-name-card+.preset-name-card{border-color:var(--preset-line)}
+.preset-parameters .preset-name-copy strong{color:var(--preset-ink)}
+.preset-parameters .preset-name-copy small{color:var(--preset-muted);font-size:11px}
+.preset-range-control input[type=range]{accent-color:var(--preset-accent)}
+.preset-range-control output{border-color:var(--preset-line);background:var(--preset-tint);color:var(--preset-ink)}
+.preset-config-section-title{margin:24px 2px 8px;color:var(--preset-ink);font-size:15px;font-weight:650;letter-spacing:0}
+.preset-config-section-title small{color:var(--preset-muted);font-size:11px}
+.preset-config-section-title>button{min-height:38px;padding:5px 10px;border:0;background:var(--preset-tint);color:var(--preset-accent);font-size:12px}
+.preset-setting-card{min-height:76px;margin:0;padding-right:8px;gap:4px;border:0;border-bottom:1px solid var(--preset-line);border-radius:0;background:transparent}
+.preset-entry-summary{min-height:76px;padding:12px 2px;gap:9px}
+.preset-entry-number{width:30px;height:28px;border-radius:5px;background:var(--preset-tint);color:var(--preset-accent);letter-spacing:0;font-family:monospace}
+.preset-entry-copy strong{color:var(--preset-ink);font-size:13px;font-weight:650;white-space:normal}
+.preset-entry-copy small{color:var(--preset-muted);font-size:11px;line-height:1.45;max-height:32px}
+.entry-disabled .preset-entry-copy{opacity:.74}
+.preset-entry-chevron,.preset-entry-handle{color:var(--preset-muted)}
+.preset-entry-handle{width:32px;height:44px}
+.preset-setting-toggle{width:40px;height:24px;background:#9da8a2}
+.preset-setting-toggle i{width:18px;height:18px}
+.preset-setting-toggle.on{background:var(--preset-accent)}
+.preset-setting-toggle.on i{transform:translateX(16px)}
+.preset-setting-card.dragging{border:1px dashed var(--preset-accent);background:var(--preset-tint);box-shadow:none}
+.preset-drag-ghost{border-color:var(--preset-line);background:var(--preset-sheet);border-radius:8px}
+.preset-config-footer{width:min(100%,740px);margin:0 auto;padding-inline:18px;background:var(--preset-paper);border-color:var(--preset-line)}
+.preset-config-footer button{height:44px;border-radius:8px;background:transparent;color:var(--preset-ink);border-color:var(--preset-line)}
+.preset-config-footer button:last-child,.preset-detail-dialog footer .preset-detail-done,.preset-name-dialog footer button:last-child{background:var(--preset-accent);border-color:var(--preset-accent);color:#fff}
+.preset-config-content :is(button,summary):focus-visible{outline:2px solid var(--preset-accent);outline-offset:2px}
+.preset-detail-dialog,.preset-name-dialog,.preset-delete-dialog{background:var(--preset-sheet)}
+.preset-detail-dialog header h3,.preset-name-dialog h3,.preset-delete-dialog h3{color:var(--preset-ink)}
+.preset-detail-dialog label,.preset-name-dialog p,.preset-delete-dialog p,.preset-detail-meta{color:var(--preset-muted)}
+.preset-detail-dialog :is(input,textarea),.preset-name-dialog input{background:var(--preset-paper);color:var(--preset-ink);border-color:var(--preset-line)}
+.preset-config-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:end;gap:8px}
+.preset-switcher{display:grid;gap:5px;min-width:0;color:var(--preset-muted);font-size:12px}
+.preset-config-toolbar button,.preset-config-toolbar select,.preset-injection-fields select{box-sizing:border-box;min-height:40px;max-width:100%;padding:7px 9px;border:1px solid var(--preset-line);border-radius:8px;background:var(--preset-sheet);color:var(--preset-ink);font:inherit;font-size:13px}
+.preset-config-toolbar button{white-space:nowrap;cursor:pointer}
+.preset-config-toolbar select,.preset-injection-fields select{width:100%;min-width:0}
+.preset-injection-fields{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,.85fr);gap:8px}
+.preset-injection-fields label{min-width:0}
+.preset-injection-fields input:disabled{opacity:.55}

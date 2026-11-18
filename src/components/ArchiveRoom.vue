@@ -76,22 +76,22 @@ function setFrame(character, animal) { emit('frame', character, animal); frames.
 
 <template>
   <section class="archive-room" :class="`theme-${currentHome?.theme || 'blue'}`" aria-label="角色档案室">
-    <header class="archive-header"><button class="paper-button" aria-label="返回角色地图" @click="emit('back')">← 地图</button><div><span>SOREN POCKET / COLLECTION</span><strong>星星档案室</strong></div><button class="paper-button pink-button" @click="emit('create')">＋ 新角色</button></header>
+    <header class="archive-header"><button class="paper-button" aria-label="返回角色地图" @click="emit('back')">← 地图</button><div><strong>星星档案室</strong></div><button class="paper-button pink-button" @click="emit('create')">＋ 新角色</button></header>
     <main class="archive-layout">
       <aside class="home-sidebar">
-        <div class="sidebar-title"><span>我的档案家园</span><small>MY LITTLE HOMES</small></div>
+        <div class="sidebar-title"><span>我的档案家园</span></div>
         <button class="home-tab all-home" :class="{ active: activeHome === 'all' }" @click="activeHome = 'all'"><span class="tab-symbol">✦</span><span>所有小伙伴<small>一起收藏每个故事</small></span><b>{{ characters.length }}</b></button>
         <button v-for="home in homes" :key="home.id" class="home-tab" :class="[{ active: activeHome === home.id }, `tab-${home.theme}`]" @click="activeHome = home.id"><PixelArtwork kind="home"/><span>{{ home.name }}<small>{{ countHome(home.id) }} 位小伙伴入住</small></span><span class="tab-dot">·</span></button>
         <button class="home-tab waiting-tab" :class="{ active: activeHome === 'unplaced' }" @click="activeHome = 'unplaced'"><span class="tab-symbol">♡</span><span>等待入住<small>给小伙伴找一个家</small></span></button>
         <button class="new-home" :disabled="!ready" @click="editHome()">＋ 建一座新家园</button>
-        <div class="sidebar-note" aria-hidden="true"><PixelArtwork kind="tea"/><span>把喜欢的故事<br/>好好收藏起来。</span><small>A LITTLE PLACE FOR YOU</small></div>
+        <div class="sidebar-note" aria-hidden="true"><PixelArtwork kind="tea"/><span>把喜欢的故事<br/>好好收藏起来。</span></div>
       </aside>
       <div class="archive-main">
         <section class="archive-hero">
-          <div class="hero-copy"><span class="archive-overline">✦ THE LITTLE ARCHIVE CLUB ✦</span><h1>{{ title }}</h1><p>{{ currentHome ? '住在同一座小屋，把日常写成故事。' : '每一位小伙伴，都有属于自己的小小宇宙。' }}</p><div class="hero-actions"><span>{{ visibleCharacters.length }} 位小伙伴 · 今日也很可爱</span><button v-if="currentHome" @click="editHome(currentHome)">装扮家园 ↗</button><button v-else :disabled="!ready" @click="editHome()">＋ 新建家园</button></div></div>
-          <div class="hero-art" aria-hidden="true"><PixelArtwork class="hero-cloud" kind="cloud"/><div class="mini-handheld"><span>POCKET FRIENDS</span><div class="handheld-lcd"><PixelArtwork kind="home"/><i>♡</i></div><div class="mini-controls"><b>✚</b><small>● ●</small></div></div><PixelArtwork class="hero-apple" kind="apple"/><PixelArtwork class="hero-bandage" kind="bandage"/><i class="hero-spark">✦</i></div>
+          <div class="hero-copy"><h1>{{ title }}</h1><p>{{ currentHome ? '住在同一座小屋，把日常写成故事。' : '每一位小伙伴，都有属于自己的小小宇宙。' }}</p><div class="hero-actions"><span>{{ visibleCharacters.length }} 位小伙伴 · 今日也很可爱</span><button v-if="currentHome" @click="editHome(currentHome)">装扮家园 ↗</button><button v-else :disabled="!ready" @click="editHome()">＋ 新建家园</button></div></div>
+          <div class="hero-art" aria-hidden="true"><PixelArtwork class="hero-cloud" kind="cloud"/><div class="mini-handheld"><div class="handheld-lcd"><PixelArtwork kind="home"/><i>♡</i></div><div class="mini-controls"><b>✚</b><small>● ●</small></div></div><PixelArtwork class="hero-apple" kind="apple"/><PixelArtwork class="hero-bandage" kind="bandage"/><i class="hero-spark">✦</i></div>
         </section>
-        <div class="collection-toolbar"><div><span class="tiny-square"/> 小伙伴陈列架 <small>FRIENDS COLLECTION</small></div><label class="archive-search"><span aria-hidden="true">⌕</span><input v-model="query" aria-label="搜索角色名字或身份" placeholder="寻找小伙伴…"/></label></div>
+        <div class="collection-toolbar"><div><span class="tiny-square"/> 小伙伴陈列架</div><label class="archive-search"><span aria-hidden="true">⌕</span><input v-model="query" aria-label="搜索角色名字或身份" placeholder="寻找小伙伴…"/></label></div>
         <div class="collection-body">
           <section class="friend-collection" aria-label="角色列表" :aria-busy="!ready">
             <div v-if="!ready" class="collection-empty">正在打开档案室…</div>
@@ -105,16 +105,16 @@ function setFrame(character, animal) { emit('frame', character, animal); frames.
               <div v-if="!visibleCharacters.length" class="collection-empty"><PixelArtwork kind="tea"/><p>{{ query ? '还没有找到这位小伙伴' : '小屋准备好了，等小伙伴来入住。' }}</p><button v-if="!query && activeHome !== 'all'" class="paper-button" @click="activeHome = 'all'">从所有小伙伴中选择</button></div>
             </template>
           </section>
-          <aside class="portrait-display"><div class="portrait-title"><span>✧ 今日的故事</span><small>CHARACTER DIARY</small></div><button v-if="featured" class="display-photo" :aria-label="`查看${featured.name}的档案`" @click="emit('open', featured)"><img v-if="featured.avatar" :src="featured.avatar" :alt="featured.name"/><AnimalAvatar v-else :animal="frameFor(featured)"/><span>{{ featured.name }}</span></button><div v-else class="display-photo empty-portrait"><AnimalAvatar animal="bunny"/><span>为故事留一个位置</span></div><PixelArtwork class="portrait-sticker" kind="bandage"/><p>{{ featured?.details || '在小小的家园里，收集一点温柔，和很多很多的奇遇。' }}</p><div class="diary-footer"><span>WITH LOVE, ALWAYS</span><PixelArtwork kind="banana"/></div></aside>
+          <aside class="portrait-display"><div class="portrait-title"><span>✧ 今日的故事</span></div><button v-if="featured" class="display-photo" :aria-label="`查看${featured.name}的档案`" @click="emit('open', featured)"><img v-if="featured.avatar" :src="featured.avatar" :alt="featured.name"/><AnimalAvatar v-else :animal="frameFor(featured)"/><span>{{ featured.name }}</span></button><div v-else class="display-photo empty-portrait"><AnimalAvatar animal="bunny"/><span>为故事留一个位置</span></div><PixelArtwork class="portrait-sticker" kind="bandage"/><p>{{ featured?.details || '在小小的家园里，收集一点温柔，和很多很多的奇遇。' }}</p><div class="diary-footer"><PixelArtwork kind="banana"/></div></aside>
         </div>
-        <footer class="archive-footer"><span>✦ 收藏故事，也收藏相遇。</span><small>SAVED IN YOUR LITTLE POCKET</small></footer>
+        <footer class="archive-footer"><span>✦ 收藏故事，也收藏相遇。</span></footer>
         <p class="archive-notice" role="status">{{ notice }}</p>
       </div>
     </main>
     <div v-if="editor || selectedCharacter" class="archive-modal" @click.self="editor = null; selectedCharacter = null" @keydown.esc="editor = null; selectedCharacter = null">
       <section class="home-dialog" role="dialog" aria-modal="true" aria-labelledby="home-dialog-title">
         <button class="dialog-close" aria-label="关闭" @click="editor = null; selectedCharacter = null">×</button>
-        <template v-if="editor"><PixelArtwork class="dialog-house" kind="home"/><span class="archive-overline">A HOME FOR YOUR STORIES</span><h2 id="home-dialog-title">{{ editor === 'new' ? '建一座小小家园' : '装扮我的家园' }}</h2><form @submit.prevent="saveHome"><label class="home-name">家园名字<input v-model="homeName" maxlength="20" placeholder="例如：月亮兔兔屋" autofocus required/></label><fieldset class="theme-picker"><legend>挑一份喜欢的颜色</legend><label v-for="theme in themes" :key="theme.id" :class="`swatch-${theme.id}`"><input v-model="homeTheme" type="radio" :value="theme.id" name="home-theme"/><span/>{{ theme.name }}</label></fieldset><button class="dialog-save" :disabled="!homeName.trim() || !ready">{{ editor === 'new' ? '小屋准备好啦' : '保存家园' }} ♡</button></form></template>
+        <template v-if="editor"><PixelArtwork class="dialog-house" kind="home"/><h2 id="home-dialog-title">{{ editor === 'new' ? '建一座小小家园' : '装扮我的家园' }}</h2><form @submit.prevent="saveHome"><label class="home-name">家园名字<input v-model="homeName" maxlength="20" placeholder="例如：月亮兔兔屋" autofocus required/></label><fieldset class="theme-picker"><legend>挑一份喜欢的颜色</legend><label v-for="theme in themes" :key="theme.id" :class="`swatch-${theme.id}`"><input v-model="homeTheme" type="radio" :value="theme.id" name="home-theme"/><span/>{{ theme.name }}</label></fieldset><button class="dialog-save" :disabled="!homeName.trim() || !ready">{{ editor === 'new' ? '小屋准备好啦' : '保存家园' }} ♡</button></form></template>
         <template v-else-if="selectedCharacter"><AnimalAvatar class="dialog-avatar" :src="selectedCharacter.avatar" :animal="frameFor(selectedCharacter)"/><h2 id="home-dialog-title">{{ selectedCharacter.name }}的小小归属</h2><fieldset class="frame-picker"><legend>选择动物头像框</legend><button v-for="animal in animals" :key="animal.id" :class="{ chosen: frameFor(selectedCharacter) === animal.id }" :aria-pressed="frameFor(selectedCharacter) === animal.id" @click="setFrame(selectedCharacter, animal.id)">{{ animal.name }}</button></fieldset><p class="choose-home-label">搬进喜欢的家园</p><div class="move-home-list"><button v-for="home in homes" :key="home.id" @click="moveCharacter(selectedCharacter, home.id)"><PixelArtwork kind="home"/><span>{{ home.name }}</span><b>{{ placements[selectedCharacter.id] === home.id ? '已入住 ✓' : '入住 →' }}</b></button><button @click="moveCharacter(selectedCharacter, '')"><span>♡ 等待入住</span><b>暂不分配</b></button></div><button class="new-home" @click="editHome()">＋ 新建一个家园</button></template>
       </section>
     </div>
@@ -130,4 +130,24 @@ function setFrame(character, animal) { emit('frame', character, animal); frames.
 @media(prefers-reduced-motion:reduce){.friend-open :deep(.animal-avatar){transition:none}}
 
 .frame-picker{flex-wrap:wrap}.frame-picker button{flex:0 0 calc(25% - 8px);padding:8px 4px}
+/* 减少背景纹理和多余留白。 */
+.archive-room{background-image:none}
+.archive-header{min-height:64px}
+.archive-header strong{margin-top:0}
+.archive-layout{gap:22px;padding:18px 26px}
+.home-sidebar{padding-right:16px}
+.sidebar-title{padding:6px 8px 12px}
+.home-tab{margin-bottom:6px;min-height:54px}
+.new-home{margin-top:10px}
+.sidebar-note{margin-top:20px;padding:10px}
+.archive-hero{min-height:155px;padding:15px 20px}
+.hero-copy h1{margin:4px 0 7px;font-size:24px}
+.hero-actions{margin-top:12px}
+.hero-art{height:135px;transform:scale(.83);transform-origin:center right}
+.collection-toolbar{margin:16px 0 10px}
+.collection-body{gap:16px}
+.friend-collection{gap:10px}
+.add-friend{min-height:170px}
+.archive-footer{margin-top:16px;padding:10px 0}
+@media(max-width:650px){.archive-header{min-height:58px}.archive-layout{gap:10px;padding:10px 12px}.home-sidebar{padding:0 0 4px}.new-home{margin:0}.archive-hero{min-height:140px;padding:12px}.hero-copy h1{margin:3px 0 5px;font-size:21px}.hero-actions{margin-top:9px}.hero-art{height:115px;transform:scale(.7);margin-left:-20px}.collection-toolbar{margin:12px 0 9px}.add-friend{min-height:155px}.archive-footer{margin-top:14px}}
 </style>

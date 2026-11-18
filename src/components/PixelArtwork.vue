@@ -21,6 +21,11 @@ const roof = computed(() => ({ home: '#d996b5', cafe: '#aa9bcd', studio: '#db9ab
         <path fill="#f1c5d5" d="M31 46h5v7h-5z"/>
         <path fill="#fffaf4" d="M32 12h2v4h-2zM23 18h21v2H23zM22 52h23v2H22z"/>
         <path fill="#dfaac2" d="M42 7h8v5h-8z"/><path fill="#8c799e" d="M41 5h1v13h-1z"/>
+        <!-- 细像素砖纹、玻璃反光与塔顶瓦片 -->
+        <path fill="#fffaf8" opacity=".8" d="M27 21h1v5h-1zM27 31h1v7h-1zM27 44h1v6h-1zM31 9h1v1h-1zM29 13h2v1h-2zM34 15h2v1h-2z"/>
+        <path fill="#cbb7d5" d="M28 27h2v.5h-2zM35 30h3v.5h-3zM28 39h2v.5h-2zM35 42h3v.5h-3zM28 50h1v.5h-1zM38 24h1v3h-1zM38 35h1v4h-1z"/>
+        <path fill="#fff" opacity=".85" d="M31.5 23.5h1v2h-1zM33 24h1v1h-1zM31.5 34.5h1v2h-1zM33 35h1v1h-1zM31.5 46.5h1v3h-1z"/>
+        <path fill="#e6c9dc" d="M24 19h19v.5H24zM23 53h21v.5H23zM31 51h4v.5h-4z"/>
       </template>
       <template v-else>
         <path fill="#77688b" d="M12 28h40v26H12z"/>
@@ -38,6 +43,13 @@ const roof = computed(() => ({ home: '#d996b5', cafe: '#aa9bcd', studio: '#db9ab
         <path fill="#b8cbb4" d="M15 45h9v3h-9zM40 45h9v3h-9z"/>
         <path fill="#db9eb7" d="M16 44h2v2h-2zM21 44h2v2h-2zM41 44h2v2h-2zM46 44h2v2h-2z"/>
         <path fill="#c395b0" d="M16 48h7v3h-7zM41 48h7v3h-7z"/>
+        <!-- 半格瓦片与墙面细纹，让屋顶和立面拥有更细腻的像素层次。 -->
+        <path fill="#fff7f4" opacity=".65" d="M26 16.5h3v.5h-3zM31 16.5h3v.5h-3zM36 17.5h2v.5h-2zM22 19.5h3v.5h-3zM27 19.5h3v.5h-3zM32 19.5h3v.5h-3zM37 20.5h3v.5h-3zM18 23.5h3v.5h-3zM23 23.5h3v.5h-3zM28 23.5h3v.5h-3zM33 23.5h3v.5h-3zM38 23.5h3v.5h-3zM43 24.5h2v.5h-2z"/>
+        <path fill="#9f779e" opacity=".4" d="M25 18h.5v1h-.5zM30 18h.5v1h-.5zM35 18h.5v1h-.5zM20 22h.5v1h-.5zM25 22h.5v1h-.5zM30 22h.5v1h-.5zM35 22h.5v1h-.5zM40 22h.5v1h-.5zM17 26h.5v1h-.5zM22 26h.5v1h-.5zM27 26h.5v1h-.5zM32 26h.5v1h-.5zM37 26h.5v1h-.5zM42 26h.5v1h-.5zM47 26h.5v1h-.5z"/>
+        <path fill="#d8c1ce" d="M15 31h2v.5h-2zM27 31h2v.5h-2zM35 31h2v.5h-2zM47 31h2v.5h-2zM15 38h2v.5h-2zM27 36h1v.5h-1zM36 44h1v.5h-1zM47 39h2v.5h-2zM25 46h3v.5h-3zM37 46h2v.5h-2zM15 51h2v.5h-2zM47 51h2v.5h-2z"/>
+        <path fill="#fff" opacity=".9" d="M19.5 34.5h1v2h-1zM20.5 35h.5v.5h-.5zM38.5 34.5h1v2h-1zM39.5 35h.5v.5h-.5zM30.5 38.5h.5v5h-.5zM44 10h1v4h-1z"/>
+        <path fill="#8fa996" d="M16 46h1v1h-1zM19 45h1v2h-1zM22 46h1v1h-1zM41 46h1v1h-1zM44 45h1v2h-1zM47 46h1v1h-1z"/>
+        <path fill="#ffe1e9" d="M16.5 44h1v1h-1zM21.5 44h1v1h-1zM41.5 44h1v1h-1zM46.5 44h1v1h-1z"/>
         <template v-if="kind === 'cafe'">
           <path fill="#8b789b" d="M12 29h40v6H12z"/><path fill="#ead5ec" d="M13 29h38v4H13z"/>
           <path fill="#b29dca" d="M14 29h4v5h-4zM23 29h4v5h-4zM32 29h4v5h-4zM41 29h4v5h-4z"/>

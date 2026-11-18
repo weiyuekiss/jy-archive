@@ -8,6 +8,7 @@ import ChatMyPage from '@/components/ChatMyPage.vue'
 import MemoryConfigPage from '@/components/MemoryConfigPage.vue'
 import { reportChatError } from '@/stores/chatErrors'
 import { roleplayRevision, managedRoleplayIds, migratePhoneChatScene } from '@/stores/chatRoleplay'
+import { DEFAULT_PRESET_ID, MAX_INJECTION_DEPTH, assemblePresetMessages, normalizeChatPreset, normalizePromptEntry } from '@/stores/chatPresets'
 
 const chatFont = computed(() => theme.fonts.find((font) => font.id === theme.fontAssignments.chat))
 const chatAppearanceStyle = computed(() => {
@@ -26,6 +27,7 @@ const chatAppearanceStyle = computed(() => {
     ...(bubbleFont ? { '--chat-bubble-font-family': `"${bubbleFont.family}", system-ui, sans-serif` } : {})
   }
 })
+const conversationTheme = ref('system')
 const enterToSend = ref(false)
 const replyImmediately = ref(false)
 const sendSoundEnabled = ref(true)
@@ -146,10 +148,15 @@ defaultChatPreset.entries.find(entry => entry.id === 'system').content = migrate
 const retainedPromptEntryIds = new Set(defaultChatPreset.entries.map((entry) => entry.id))
 defaultChatPreset.entries = defaultChatPreset.entries.filter((entry) => retainedPromptEntryIds.has(entry.id))
 const cloneConfig = (value) => JSON.parse(JSON.stringify(value))
-const chatConfig = ref({ preset: cloneConfig(defaultChatPreset), profileId: '', assignments: {} })
+const freshDefaultPreset = () => normalizeChatPreset({ ...cloneConfig(defaultChatPreset), id: DEFAULT_PRESET_ID })
+const chatConfig = ref({ preset: freshDefaultPreset(), presets: [], profileId: '', assignments: {} })
 const presetDraft = ref(null)
+const presetDraftLibrary = ref([])
+const presetModeLabels = { prefix: '提示词前置', suffix: '提示词后置', depth: '按深度插入' }
+const presetRoleLabels = { system: '系统', user: '用户', assistant: '助手' }
 const presetDetailIndex = ref(-1)
 const presetDeleteIndex = ref(-1)
+const presetDeleteDialogOpen = ref(false)
 const presetNameDialogOpen = ref(false)
 const presetNameDraft = ref('')
 const draggingPresetIndex = ref(-1)
@@ -816,10 +823,9 @@ async function translateMomentText(target, text) {
     if (!preset?.baseUrl?.trim() || !preset?.model?.trim() || !preset.apiKey?.trim()) throw new Error('请先配置模型 API。')
     const response = await fetch(`${preset.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` },
-      body: JSON.stringify({ model: preset.model, messages: [
-        { role: 'system', content: getPromptEntryContent('api-moment-translation') },
+      body: JSON.stringify({ model: preset.model, messages: buildTaskPromptMessages('api-moment-translation', [
         { role: 'user', content: text },
-      ], temperature: 0.2, stream: false }),
+      ]), temperature: 0.2, stream: false }),
     })
     if (!response.ok) throw new Error(`翻译请求失败（${response.status}）`)
     const data = await response.json().catch(() => ({}))
@@ -920,9 +926,9 @@ function characterToText(character) {
     .join('\n') || '（暂无角色资料）'
 }
 
-function getPromptEntryContent(id) {
+function buildTaskPromptMessages(id, messages) {
   const entry = chatConfig.value.preset.entries.find((item) => item.id === id)
-  return entry?.enabled && entry.content.trim() ? entry.content : ''
+  return assemblePresetMessages(messages, entry ? [entry] : [])
 }
 
 function parseReplyMessages(raw) {
@@ -958,7 +964,22 @@ function parseReplyMessages(raw) {
   const replies = items.map((item) => typeof item === 'string' ? { text: item } : item).filter((item) => typeof item?.text === 'string' && item.text.trim()).map((item) => { const isDocument = item.type === 'file' && typeof item.content === 'string' && item.content.trim(); const safeName = typeof item.fileName === 'string' ? item.fileName.trim().replace(/[\\\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 100) : ''; return ({ text: item.text.trim(), translation: typeof item.translation === 'string' ? item.translation.trim().slice(0, 12000) : '', type: isDocument ? 'file' : ['text-image', 'transfer', 'voice'].includes(item.type) ? item.type : 'text', fileName: safeName || '角色文档.txt', content: typeof item.content === 'string' ? item.content.trim().slice(0, isDocument ? 50000 : 1000) : '', amount: Number(item.amount) > 0 ? Number(item.amount) : null, voiceDescription: typeof item.voiceDescription === 'string' ? item.voiceDescription.trim().slice(0, 240) : '', feeling: typeof item.feeling === 'string' ? item.feeling.trim().slice(0, 700) : '', replyTo: Number.isInteger(item.replyTo) && item.replyTo >= 0 ? item.replyTo : null, reactionTo: Number.isInteger(item.reactionTo) && item.reactionTo >= 0 ? item.reactionTo : null, reactionEmoji: normalizeReaction(item.reactionEmoji), status: item.status && typeof item.status === 'object' ? { closeness: normalizedStatus(item.status.closeness), security: normalizedStatus(item.status.security), energy: normalizedStatus(item.status.energy), heartFlutter: normalizedStatus(item.status.heartFlutter ?? item.status.expectation), feeling: typeof item.status.feeling === 'string' ? item.status.feeling.trim().slice(0, 300) : '' } : null }) })
   if (!replies.length) throw new Error('角色暂时没有生成回复，请重试。')
   if (typeof parsed.feeling === 'string' && parsed.feeling.trim()) replies[0].feeling = parsed.feeling.trim().slice(0, 700)
-  return replies
+
+  // 仅拆分普通文字回复；标点归入前一句，并将逗号统一改为句号。
+  return replies.flatMap((reply) => {
+    if (reply.type !== 'text') return [reply]
+    const segments = reply.text.split(/([，,。.!！?？])/u)
+    const parts = []
+    for (let index = 0; index < segments.length; index += 2) {
+      let sentence = segments[index] || ''
+      const punctuation = segments[index + 1] || ''
+      if (punctuation) sentence += /[，,]/u.test(punctuation) ? '。' : punctuation
+      sentence = sentence.trim()
+      if (sentence) parts.push(sentence)
+    }
+    if (parts.length <= 1) return [reply]
+    return parts.map((text, index) => index === 0 ? { ...reply, text } : { text, type: 'text' })
+  })
 }
 
 async function completeMissingStatusFeeling(replies, history, preset, controller) {
@@ -969,12 +990,11 @@ async function completeMissingStatusFeeling(replies, history, preset, controller
       const response = await fetch(`${preset.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` },
-        body: JSON.stringify({ model: preset.model, temperature: 0.7, stream: false, messages: [
-          { role: 'system', content: getPromptEntryContent('api-status-feeling') },
+        body: JSON.stringify({ model: preset.model, temperature: 0.7, stream: false, messages: buildTaskPromptMessages('api-status-feeling', [
           ...history,
           { role: 'assistant', content: replies.map((item) => item.text).join('\\n') },
           { role: 'user', content: `角色上一轮状态：${JSON.stringify(reply.status)}。请补全本轮状态栏心声。` },
-        ] }),
+        ]) }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) continue
@@ -999,10 +1019,9 @@ async function translateCharacterReply(text, chatId, controller) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` },
       body: JSON.stringify({
         model: preset.model,
-        messages: [
-          { role: 'system', content: getPromptEntryContent('api-chat-translation') },
+        messages: buildTaskPromptMessages('api-chat-translation', [
           { role: 'user', content: text },
-        ], temperature: 0.2, stream: false,
+        ]), temperature: 0.2, stream: false,
       }),
     })
     if (!response.ok) return ''
@@ -1023,19 +1042,18 @@ async function requestCharacterReply(chat, history, controller, previousStatus =
   const character = contacts.value.find((person) => person.id === chat.id)
   const needsThought = thoughtPreviewEnabled(chat.id)
   const enabledEntries = chatConfig.value.preset.entries.filter((entry) => entry.enabled && entry.content.trim() && (!entry.id.startsWith('api-') || (entry.id === 'api-thought-completion' && needsThought)))
-  const orderedEntries = [...enabledEntries.filter((entry) => !entry.appendToPromptEnd), ...enabledEntries.filter((entry) => entry.appendToPromptEnd)]
   const userName = profile?.name?.trim() || '用户'
   const characterName = character?.name?.trim() || '角色'
   const historyText = history.map((message) => `${message.role === 'assistant' ? characterName : userName}：${typeof message.content === 'string' ? message.content : '（包含多模态内容）'}`).join('\n') || '（暂无历史消息）'
   const latestUserMessage = [...history].reverse().find((message) => message.role === 'user')
   const replacements = { '{{user_persona}}': profileToText(profile), '{{character_persona}}': characterToText(character), '{{chat_history}}': historyText, '{{lastusermessage}}': typeof latestUserMessage?.content === 'string' ? latestUserMessage.content : '（用户最新消息包含多模态内容）', '{{user}}': userName, '<user>': userName, '{{char}}': characterName, '<char>': characterName }
   const systemInstruction = characterChatSettings.value[chat.id]?.systemInstruction?.trim() || ''
+  const renderEntry = (entry) => {
+    let content = entry.content
+    for (const [token, value] of Object.entries(replacements)) content = content.replaceAll(token, () => value)
+    return `【${entry.name}】\n${content}`
+  }
   const systemPrompt = [
-    ...orderedEntries.map((entry) => {
-      let content = entry.content
-      for (const [token, value] of Object.entries(replacements)) content = content.replaceAll(token, value)
-      return `【${entry.name}】\n${content}`
-    }),
     ...(systemInstruction ? [`【当前聊天额外指令】\n${systemInstruction}`] : []),
     `【应用输出协议】只返回一个合法 JSON 对象，不输出代码围栏或其他文字。必须包含 messages 数组，每项必须有非空字符串 text；其他消息字段按已启用规则保留。${needsThought ? '角色即时备注放在顶层 feeling 字符串，聊天对白放在 messages 的 text，二者不得混写。示例：{"feeling":"我想问一句。","messages":[{"text":"玩什么？"}]}。' : '示例：{"messages":[{"text":"角色回复"}]}。'}字符串中的换行须转义，不使用尾随逗号。`,
   ].join('\n\n')
@@ -1045,10 +1063,7 @@ async function requestCharacterReply(chat, history, controller, previousStatus =
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` },
     body: JSON.stringify({
       model: preset.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...history,
-      ],
+      messages: assemblePresetMessages(history, enabledEntries, systemPrompt, renderEntry),
       temperature: Number.isFinite(Number(chatConfig.value.preset.temperature)) ? Number(chatConfig.value.preset.temperature) : 1,
       ...(Number(chatConfig.value.preset.top_k) > 0 ? { top_k: Math.max(1, Math.round(Number(chatConfig.value.preset.top_k))) } : {}),
       ...(Number(chatConfig.value.preset.top_p) > 0 ? { top_p: Math.max(0.01, Math.min(1, Number(chatConfig.value.preset.top_p))) } : {}),
@@ -1480,7 +1495,18 @@ onMounted(async () => {
   window.addEventListener('jyos-characters-updated', onCharactersUpdated)
   chatMessages.value = savedMessages && typeof savedMessages === 'object' && !Array.isArray(savedMessages) ? savedMessages : {}
   chatHistoryReady.value = true
-  if (savedChatConfig && typeof savedChatConfig === 'object') {
+  const savedPresets = Array.isArray(savedChatConfig?.presets)
+    ? savedChatConfig.presets.filter((preset) => typeof preset?.id === 'string' && preset.id && Array.isArray(preset.entries)).map(normalizeChatPreset)
+    : []
+  if (savedPresets.length) {
+    if (!savedPresets.some((preset) => preset.id === DEFAULT_PRESET_ID)) savedPresets.unshift(freshDefaultPreset())
+    chatConfig.value = {
+      preset: savedPresets.find((preset) => preset.id === savedChatConfig.preset?.id) || savedPresets[0],
+      presets: savedPresets,
+      profileId: typeof savedChatConfig.profileId === 'string' ? savedChatConfig.profileId : '',
+      assignments: {},
+    }
+  } else if (savedChatConfig && typeof savedChatConfig === 'object') {
     chatConfig.value = {
       preset: {
         ...cloneConfig(defaultChatPreset),
@@ -1490,7 +1516,8 @@ onMounted(async () => {
         name: savedChatConfig.preset?.name === 'JY 温柔日常' ? '默认预设' : (savedChatConfig.preset?.name || '默认预设'),
         entries: Array.isArray(savedChatConfig.preset?.entries)
           ? (() => {
-              const savedEntries = savedChatConfig.preset.entries
+              const savedEntries = savedChatConfig.preset.entries.filter((entry) => entry && typeof entry.id === 'string')
+              const savedOrder = new Map(savedEntries.map((entry, index) => [entry.id, index]))
               const savedById = new Map(savedEntries.map((entry) => [entry.id, entry]))
               const removedDefaultEntryIds = new Set(['alive-plus-plus', 'natural-message-segmentation', 'internet-meme-lore', 'chat-natural-flow', 'everyday-natural-replies', 'anti-vintage-ceo-romance', 'grounded-attractive-voice', 'modern-conversational-voice', 'distinctive-character-voice', 'anti-cliche-character-expression', 'behavior-guidelines', 'expression-freedom-protection'])
               const customEntries = savedEntries.filter((entry) => !defaultChatPreset.entries.some((defaultEntry) => defaultEntry.id === entry.id) && !removedDefaultEntryIds.has(entry.id) && !['scenario', 'continuity', 'style', 'format', 'example', 'after'].includes(entry.id))
@@ -1510,7 +1537,8 @@ onMounted(async () => {
                   return { ...entry, name: saved.name ?? entry.name, content: savedContent, enabled: saved.enabled ?? entry.enabled }
                 }),
                 ...customEntries,
-              ]
+              ].map((entry) => normalizePromptEntry({ ...entry, ...Object.fromEntries(['role', 'injectionMode', 'injectionDepth'].map((key) => [key, savedById.get(entry.id)?.[key] ?? entry[key]])) }))
+                .sort((a, b) => (savedOrder.get(a.id) ?? savedEntries.length) - (savedOrder.get(b.id) ?? savedEntries.length))
             })()
           : cloneConfig(defaultChatPreset.entries),
       },
@@ -1518,6 +1546,8 @@ onMounted(async () => {
       assignments: {},
     }
   }
+  chatConfig.value.preset = normalizeChatPreset({ ...chatConfig.value.preset, id: chatConfig.value.preset.id || DEFAULT_PRESET_ID })
+  if (!chatConfig.value.presets?.length) chatConfig.value.presets = [chatConfig.value.preset]
   const selectedIds = Array.isArray(savedChats) ? savedChats : []
   sections.value[0].chats = contacts.value.filter((person) => selectedIds.includes(person.id)).map((person) => ({
     id: person.id,
@@ -1947,11 +1977,67 @@ function savePresetName() {
 }
 
 function editChatPreset() {
+  presetDraftLibrary.value = cloneConfig(chatConfig.value.presets?.length ? chatConfig.value.presets : [chatConfig.value.preset])
   presetDraft.value = cloneConfig(chatConfig.value.preset)
 }
 
+function stagePresetDraft() {
+  const index = presetDraftLibrary.value.findIndex((preset) => preset.id === presetDraft.value.id)
+  const draft = normalizeChatPreset(cloneConfig(presetDraft.value))
+  if (index >= 0) presetDraftLibrary.value[index] = draft
+  else presetDraftLibrary.value.push(draft)
+}
+
+function switchPresetDraft(id) {
+  if (id === presetDraft.value.id) return
+  stagePresetDraft()
+  const next = presetDraftLibrary.value.find((preset) => preset.id === id)
+  if (next) presetDraft.value = cloneConfig(next)
+}
+
+function copyPresetDraft() {
+  stagePresetDraft()
+  const copy = cloneConfig(presetDraft.value)
+  copy.id = `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  let suffix = ' 副本'
+  let count = 2
+  while (presetDraftLibrary.value.some((preset) => preset.name === `${copy.name}${suffix}`)) suffix = ` 副本 ${count++}`
+  copy.name = `${copy.name}${suffix}`
+  presetDraftLibrary.value.push(cloneConfig(copy))
+  presetDraft.value = copy
+}
+
+function deletePresetDraft() {
+  const preset = presetDraft.value
+  const fallback = presetDraftLibrary.value.find((item) => item.id === DEFAULT_PRESET_ID)
+  if (!preset || preset.id === DEFAULT_PRESET_ID || !fallback) return
+  presetDeleteDialogOpen.value = true
+}
+
+function cancelDeletePresetDraft() {
+  presetDeleteDialogOpen.value = false
+}
+
+function confirmDeletePresetDraft() {
+  const preset = presetDraft.value
+  const fallback = presetDraftLibrary.value.find((item) => item.id === DEFAULT_PRESET_ID)
+  if (!preset || preset.id === DEFAULT_PRESET_ID || !fallback) {
+    presetDeleteDialogOpen.value = false
+    return
+  }
+  presetDraftLibrary.value = presetDraftLibrary.value.filter((item) => item.id !== preset.id)
+  presetDraft.value = cloneConfig(fallback)
+  presetDeleteDialogOpen.value = false
+}
+
+function resetPresetDraft() {
+  if (!window.confirm(`将「${presetDraft.value.name}」的模型参数和全部条目恢复为内置默认值？`)) return
+  const { id, name } = presetDraft.value
+  presetDraft.value = { ...freshDefaultPreset(), id, ...(id === DEFAULT_PRESET_ID ? {} : { name }) }
+}
+
 function addPresetEntry() {
-  newPresetEntry.value = { id: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: '', enabled: true, content: '' }
+  newPresetEntry.value = normalizePromptEntry({ id: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: '', enabled: true, content: '' })
 }
 
 function confirmPresetDetail() {
@@ -1990,7 +2076,7 @@ function restorePresetEntry(index) {
   const entry = presetDraft.value.entries[index]
   const defaultEntry = defaultChatPreset.entries.find((item) => item.id === entry.id)
   if (!defaultEntry) return
-  presetDraft.value.entries[index] = { ...cloneConfig(defaultEntry), enabled: entry.enabled }
+  presetDraft.value.entries[index] = normalizePromptEntry({ ...cloneConfig(defaultEntry), enabled: entry.enabled })
 }
 
 function startPresetDrag(index, event) {
@@ -2066,9 +2152,12 @@ function closePresetDetail() {
 }
 
 function savePreset() {
-  const name = presetDraft.value.name.trim() || '我的聊天预设'
-  chatConfig.value.preset = { ...presetDraft.value, name, entries: presetDraft.value.entries.map((entry) => ({ ...entry, name: entry.name.trim() || '未命名条目' })) }
+  stagePresetDraft()
+  const presets = cloneConfig(presetDraftLibrary.value)
+  const preset = presets.find((item) => item.id === presetDraft.value.id)
+  chatConfig.value = { ...chatConfig.value, preset, presets }
   presetDraft.value = null
+  showToast(`已启用「${preset.name}」`)
 }
 
 function openFriendSearch() {
@@ -2099,7 +2188,7 @@ function removeContact(person) {
 </script>
 
 <template>
-  <div class="chat-app" :style="chatAppearanceStyle">
+  <div class="chat-app" :class="{ 'chat-list-home': currentTab === '聊天' }" :style="chatAppearanceStyle">
     <div v-if="replyNotices.length" class="reply-notice-stack" aria-live="polite" aria-label="新消息">
       <button v-for="(notice, index) in replyNotices" :key="notice.id" type="button" class="reply-notice" :style="{ '--stack-index': index }" :aria-label="`打开${chatDisplayName(notice.chat)}的聊天`" @click="openNoticeChat(notice)">
         <span class="notice-avatar" :class="{ 'avatar-placeholder': !notice.chat.avatarImage }" :style="{ '--avatar-color': notice.chat.color }"><img v-if="notice.chat.avatarImage" :src="notice.chat.avatarImage" alt="" /><span v-else></span></span>
@@ -2111,6 +2200,9 @@ function removeContact(person) {
       <button v-if="currentTab !== '聊天'" class="back-button" aria-label="返回桌面" @click="emit('close')"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
       <div class="topbar-spacer" />
       <button v-if="currentTab === '朋友圈'" class="round-action" aria-label="搜索人物" @click="openFriendSearch"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg></button>
+      <button v-if="currentTab === '朋友圈'" class="round-action moments-camera-action" type="button" :aria-label="momentsDraftSaved ? '继续编辑草稿' : '分享此刻'" @click="openMomentComposer">
+        <svg viewBox="0 0 24 24" aria-hidden="true" stroke-linejoin="round"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.4-2h4.2l1.4 2h2A2.5 2.5 0 0 1 20 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-10Z"/><circle cx="12" cy="12" r="4"/></svg>
+      </button>
     </header>
     <button v-if="currentTab === '聊天'" class="round-action chat-list-search-action" aria-label="搜索人物" @click="openFriendSearch"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg></button>
 
@@ -2132,11 +2224,11 @@ function removeContact(person) {
       </template>
     <section v-else-if="currentTab === '朋友圈'" class="moments-page" :class="{ 'moments-disabled': !momentsSettings.enabled }">
         <input ref="momentsCoverInput" class="visually-hidden-input" type="file" accept="image/*" @change="readMomentsImage($event, 'cover')" />
-        <div class="moments-cover" :style="momentsCover ? { backgroundImage: `linear-gradient(to bottom, transparent 58%, rgba(247,247,245,.24) 78%, #f7f7f5 100%), url(${momentsCover})` } : {}" @click="chooseMomentsCover">
+        <div class="moments-cover" :style="momentsCover ? { '--moments-cover-image': `url(${momentsCover})` } : null" @click="chooseMomentsCover">
           <span v-if="!momentsCover" class="moments-cover-hint">点击设置朋友圈封面</span>
           <div class="moments-profile"><button class="moments-avatar" type="button" aria-label="更换我的头像" @click.stop="avatarDialogOpen = true"><img v-if="activeUserAvatar" :src="activeUserAvatar" alt="我的头像"/><span v-else>{{ (activeUserPersona.name || '我').slice(0,1) }}</span></button><strong>{{ activeUserPersona.name || '我' }}</strong></div>
         </div>
-        <div class="moments-feed"><button class="moments-write" type="button" @click="openMomentComposer">✎ <span>{{ momentsDraftSaved ? '继续编辑草稿' : '分享此刻' }}</span></button>
+        <div class="moments-feed">
           <article v-for="post in momentsPosts" :key="post.id" class="moment-post"><div class="moment-avatar"><img v-if="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" :src="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" alt=""/><span v-else>{{ (post.authorName || activeUserPersona.name || '我').slice(0,1) }}</span></div><div class="moment-body"><strong>{{ post.authorName || activeUserPersona.name || '我' }}</strong><p v-if="post.text">{{ post.text }}</p><p v-if="post.translationVisible && post.translation" class="moment-translation">{{ post.translation }}</p><button v-if="post.authorType === 'character' && post.text" class="moment-translate-button" type="button" :disabled="post.translationLoading" @click="toggleMomentTranslation(post)">{{ post.translationLoading ? '翻译中…' : post.translationVisible ? '收起翻译' : '翻译' }}</button><img v-if="post.image" class="moment-image" :src="post.image" alt="动态图片"/><small>{{ post.time }}</small><div v-if="post.authorType === 'user' || post.authorType === 'character'" class="moment-manage"><button v-if="post.authorType === 'user'" type="button" @click="editMoment(post)">编辑</button><button type="button" @click="deleteMoment(post)">删除</button></div><div class="moment-actions"><button class="moment-like-button" type="button" :disabled="!momentsSettings.enabled" @click="toggleMomentLike(post)"><span class="moment-heart" :class="{ liked: post.likes?.includes(chatConfig.profileId || 'user') }">♥</span>{{ post.likes?.length || 0 }}</button><button class="moment-comment-button" type="button" @click="momentsReplyTargets[post.id] = ''; momentsCommentDialogPostId = post.id">评论</button></div><div v-if="post.comments?.length" class="moment-comments"><div v-for="comment in post.comments" :key="comment.id" class="moment-comment" :class="{ 'moment-comment-reply': comment.replyTo }" role="button" tabindex="0" :aria-label="`回复${comment.authorName || '访客'}的评论`" @click="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.enter.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.space.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id"><span class="moment-comment-avatar"><img v-if="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" :src="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" alt=""/><span v-else>{{ (comment.authorName || '友').slice(0,1) }}</span></span><span class="moment-comment-copy"><strong>{{ comment.authorName || '访客' }}</strong><span><template v-if="comment.replyTo">回复 {{ post.comments.find((item) => item.id === comment.replyTo)?.authorName || '评论' }}：</template>{{ comment.text }}</span><span v-if="comment.translationVisible && comment.translation" class="moment-translation">{{ comment.translation }}</span><button v-if="comment.authorType === 'character' && comment.text" class="moment-translate-button" type="button" :disabled="comment.translationLoading" @click.stop="toggleMomentTranslation(comment)">{{ comment.translationLoading ? '翻译中…' : comment.translationVisible ? '收起翻译' : '翻译' }}</button></span></div></div></div></article>
           <p v-if="!momentsPosts.length" class="moments-empty">记录生活里的小事，让此刻留有回响。</p>
         </div>
@@ -2151,7 +2243,7 @@ function removeContact(person) {
       <section v-else class="my-page">
         <div v-if="momentsGeneratingPosts" class="moment-generation-progress" role="status"><span class="moment-generation-spinner" aria-hidden="true"></span><span>正在生成朋友圈内容…</span><button type="button" @click="momentsGenerationController?.abort()">取消</button></div>
     <div v-if="momentsGenerationError" class="moment-subdialog-backdrop moment-generation-error-backdrop" @click.self="momentsGenerationError = ''"><section class="moment-subdialog moment-generation-error-card" role="alertdialog" aria-modal="true" aria-labelledby="moment-generation-error-title"><header><strong id="moment-generation-error-title">生成未完成</strong><button type="button" @click="momentsGenerationError = ''">关闭</button></header><p role="alert">{{ momentsGenerationError }}</p><button class="moment-generation-error-confirm" type="button" @click="momentsGenerationError = ''">知道了</button></section></div>
-        <div class="my-profile-avatar" aria-label="我的头像">
+        <div class="my-profile-avatar" aria-label="我的头像" style="margin-bottom: 28px;">
           <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="我的头像" />
           <span v-else>{{ (userProfile.name || '我').slice(0, 1) }}</span>
         </div>
@@ -2222,13 +2314,14 @@ function removeContact(person) {
     </main>
 
     <transition name="conversation-fade">
-      <div v-if="activeChat" class="conversation-overlay">
+      <div v-if="activeChat" class="conversation-overlay" :data-conversation-theme="conversationTheme">
         <section class="conversation-page">
           <header class="conversation-header">
-            <button class="conversation-back" aria-label="返回聊天列表" @click="leaveConversation"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h10"/></svg></button>
-            <h1 class="conversation-title">{{ chatDisplayName(activeChat) }}</h1>
-            <button v-if="statusBarEnabled()" type="button" class="conversation-status-button" aria-label="查看角色状态" :disabled="!latestCharacterStatus" @click="openCharacterStatus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-8-4.7-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.3-8 11-8 11Z"/></svg></button>
-            <div class="conversation-actions"><button class="conversation-settings" aria-label="更多聊天选项" @click="openChatSettings"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button></div>
+            <button class="conversation-back" aria-label="返回聊天列表" @click="leaveConversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg></button>
+            <div class="conversation-identity-copy"><h1 class="conversation-title">{{ chatDisplayName(activeChat) }}</h1><span class="conversation-subtitle"><i v-if="!characterTyping" class="conversation-online-dot" aria-hidden="true"></i><template v-if="characterTyping">对方正在输入中</template><template v-else>在线 <span class="conversation-subtitle-separator">·</span> <span class="conversation-subtitle-emoji" aria-hidden="true">🌸</span>被窝空 <span class="conversation-chevron" aria-hidden="true">›</span></template></span></div>
+            <button type="button" class="conversation-theme-toggle" :aria-label="conversationTheme === 'night' ? '切换到日间模式' : '切换到夜间模式'" :title="conversationTheme === 'night' ? '日间模式' : '夜间模式'" @click="conversationTheme = conversationTheme === 'night' ? 'day' : 'night'"><svg v-if="conversationTheme === 'night'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg><svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 0 1 8.7 3.5 8.5 8.5 0 1 0 20.5 15.3Z"/></svg></button>
+            <button v-if="statusBarEnabled()" type="button" class="conversation-status-button" aria-label="查看角色状态" :disabled="!latestCharacterStatus" @click="openCharacterStatus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5 3 21v-5.2A8.5 8.5 0 1 1 7 18.5Z"/><circle cx="9" cy="11" r=".7"/><circle cx="12" cy="11" r=".7"/><circle cx="15" cy="11" r=".7"/></svg></button>
+            <div class="conversation-actions"><button class="conversation-settings" aria-label="更多聊天选项" @click="openChatSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button></div>
           </header>
           <main ref="messageList" class="message-list" @wheel.passive="onOlderMessagesWheel" @touchstart.passive="onOlderMessagesTouchStart" @touchend.passive="onOlderMessagesTouchEnd" @scroll.passive="onMessageListScroll">
             <button v-if="visibleMessageOffset > 0 && olderMessagesPromptVisible" class="load-older-messages" @click="loadOlderMessages">加载更早的消息（{{ visibleMessageOffset }} 条）</button>
@@ -2237,31 +2330,30 @@ function removeContact(person) {
             <div class="message-row" :class="[message.from, { 'has-tail': isLastInRun(visibleMessageOffset + index), 'message-selected': selectedMessages.includes(visibleMessageOffset + index) }]" @pointerdown="!multiDeleteMode && startMessagePress(visibleMessageOffset + index, $event)" @pointerup="cancelMessagePress" @pointerleave="cancelMessagePress" @pointercancel="cancelMessagePress" @contextmenu.prevent="openMessageMenu(visibleMessageOffset + index, $event)" @click.capture="handleMessageSelectionClick(visibleMessageOffset + index, $event)" @click="suppressMessageClick($event)">
               <span v-if="message.from === 'them'" class="tiny-avatar" :class="{ 'avatar-placeholder': !activeChat.avatarImage }" :style="{'--avatar-color': activeChat.color}"><img v-if="activeChat.avatarImage" :src="activeChat.avatarImage" alt=""/><span v-else></span></span>
               <span v-else class="tiny-avatar user-tiny-avatar"><img v-if="activeUserAvatar" :src="activeUserAvatar" alt="我的头像"/><span v-else></span></span>
-              <div class="message-content-stack"><div v-if="message.from === 'them' && thoughtPreviewEnabled() && message.thought" class="thought-preview"><button type="button" class="thought-preview-toggle" @click.stop="openThoughtSummary(message)"><span>Before Reply</span></button></div><div class="message-bubble-wrap"><template v-if="message.type === 'text-image'"><button type="button" class="text-image-card" :class="{ 'polaroid-character': message.from === 'them' }" :aria-label="`打开来自${message.from === 'me' ? '我' : activeChat.name}的文字图`" @click.stop="polaroidPreview = { content: message.content, from: message.from }"><span class="polaroid-photo"><span class="special-card-label">{{ message.from === 'me' ? 'A MOMENT' : activeChat.name }}</span><span class="polaroid-copy">{{ message.content }}</span></span><span class="polaroid-caption">{{ message.from === 'me' ? 'a little note' : 'a moment to keep' }}</span></button></template>            <template v-else-if="message.type === 'file'"><button type="button" class="document-file-card" @click.stop="documentPreview = message"><span class="document-file-icon">W</span><span class="document-file-copy"><strong>{{ message.fileName || '角色文档.txt' }}</strong><small>{{ message.content?.length || 0 }} 字符 · 点击查看</small></span><span class="document-file-arrow">›</span></button></template><template v-else-if="message.type === 'transfer'"><button type="button" class="transfer-card" @click.stop="transferActionDialog = visibleMessageOffset + index"><span class="transfer-icon">¥</span><span class="transfer-copy"><strong>转账</strong><b>¥{{ Number(message.amount).toFixed(2) }}</b><small>{{ message.transferStatus || '待处理' }}</small></span></button></template><template v-else-if="message.type === 'voice'"><div class="voice-message-layout" :class="{ 'voice-message-outgoing': message.from === 'me' }"><Transition name="voice-transcript-expand"><p v-if="(message.from === 'me' && message.transcript) || (message.from === 'them' && expandedVoiceTranscript === visibleMessageOffset + index && message.transcript)" class="voice-transcript">{{ message.transcript }}<span v-if="message.from === 'them' && message.voiceDescription" class="voice-description">{{ message.voiceDescription.startsWith('（') ? message.voiceDescription : `（${message.voiceDescription}）` }}</span></p></Transition><div class="voice-message-card"><button type="button" class="voice-play-button" :aria-label="message.from === 'me' ? '播放我的语音' : '语音条'" :disabled="message.from === 'me' && !message.audioData && !message.audioUrl" @click.stop="playVoiceMessage(message, visibleMessageOffset + index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button><span class="voice-wave" :class="{ playing: playingVoiceIndex === visibleMessageOffset + index }" :style="{ '--voice-progress': `${playingVoiceIndex === visibleMessageOffset + index ? voiceProgress * 100 : 0}%` }" aria-hidden="true"><i v-for="bar in 18" :key="bar" :style="{ '--bar-height': `${8 + ((bar * 13) % 17)}px` }" /></span></div></div><p v-if="message.from === 'me' && message.voiceImpression" class="voice-impression">声音印象：{{ message.voiceImpression }}</p></template><template v-else-if="message.type === 'image'"><button type="button" class="image-message-card" @click.stop="imagePreview = message.imageData"><img :src="message.imageData" alt="用户发送的图片" /></button></template><template v-else><div class="message-bubble"><div v-if="message.replyTo" class="quoted-message"><strong>{{ message.replyTo.from === 'me' ? '我' : activeChat.name }}</strong><span>{{ message.replyTo.text }}</span></div><span class="message-text">{{ message.text }}</span><span v-if="normalizeReaction(message.reaction)" class="message-reaction" :class="{ 'character-reaction': message.from === 'them' }" :aria-label="`反应：${normalizeReaction(message.reaction)}`">{{ normalizeReaction(message.reaction) }}</span></div><p v-if="message.from === 'them' && message.translation && chatTranslationEnabled()" class="message-translation">{{ message.translation }}</p></template></div>
+              <div class="message-content-stack"><div v-if="message.from === 'them' && thoughtPreviewEnabled() && message.thought" class="thought-preview"><button type="button" class="thought-preview-toggle" aria-label="查看回复前提示" @click.stop="openThoughtSummary(message)"><span aria-hidden="true">🔔</span></button></div><div class="message-bubble-wrap"><template v-if="message.type === 'text-image'"><button type="button" class="text-image-card" :class="{ 'polaroid-character': message.from === 'them' }" :aria-label="`打开来自${message.from === 'me' ? '我' : activeChat.name}的文字图`" @click.stop="polaroidPreview = { content: message.content, from: message.from }"><span class="polaroid-photo"><span class="special-card-label">{{ message.from === 'me' ? 'A MOMENT' : activeChat.name }}</span><span class="polaroid-copy">{{ message.content }}</span></span><span class="polaroid-caption">{{ message.from === 'me' ? 'a little note' : 'a moment to keep' }}</span></button></template>            <template v-else-if="message.type === 'file'"><button type="button" class="document-file-card" @click.stop="documentPreview = message"><span class="document-file-icon">W</span><span class="document-file-copy"><strong>{{ message.fileName || '角色文档.txt' }}</strong><small>{{ message.content?.length || 0 }} 字符 · 点击查看</small></span><span class="document-file-arrow">›</span></button></template><template v-else-if="message.type === 'transfer'"><button type="button" class="transfer-card" @click.stop="transferActionDialog = visibleMessageOffset + index"><span class="transfer-icon">¥</span><span class="transfer-copy"><strong>转账</strong><b>¥{{ Number(message.amount).toFixed(2) }}</b><small>{{ message.transferStatus || '待处理' }}</small></span></button></template><template v-else-if="message.type === 'voice'"><div class="voice-message-layout" :class="{ 'voice-message-outgoing': message.from === 'me' }"><Transition name="voice-transcript-expand"><p v-if="(message.from === 'me' && message.transcript) || (message.from === 'them' && expandedVoiceTranscript === visibleMessageOffset + index && message.transcript)" class="voice-transcript">{{ message.transcript }}<span v-if="message.from === 'them' && message.voiceDescription" class="voice-description">{{ message.voiceDescription.startsWith('（') ? message.voiceDescription : `（${message.voiceDescription}）` }}</span></p></Transition><div class="voice-message-card"><button type="button" class="voice-play-button" :aria-label="message.from === 'me' ? '播放我的语音' : '语音条'" :disabled="message.from === 'me' && !message.audioData && !message.audioUrl" @click.stop="playVoiceMessage(message, visibleMessageOffset + index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button><span class="voice-wave" :class="{ playing: playingVoiceIndex === visibleMessageOffset + index }" :style="{ '--voice-progress': `${playingVoiceIndex === visibleMessageOffset + index ? voiceProgress * 100 : 0}%` }" aria-hidden="true"><i v-for="bar in 18" :key="bar" :style="{ '--bar-height': `${8 + ((bar * 13) % 17)}px` }" /></span></div></div><p v-if="message.from === 'me' && message.voiceImpression" class="voice-impression">声音印象：{{ message.voiceImpression }}</p></template><template v-else-if="message.type === 'image'"><button type="button" class="image-message-card" @click.stop="imagePreview = message.imageData"><img :src="message.imageData" alt="用户发送的图片" /></button></template><template v-else><div class="message-bubble"><div v-if="message.replyTo" class="quoted-message"><strong>{{ message.replyTo.from === 'me' ? '我' : activeChat.name }}</strong><span>{{ message.replyTo.text }}</span></div><span class="message-text">{{ message.text }}</span><span v-if="normalizeReaction(message.reaction)" class="message-reaction" :class="{ 'character-reaction': message.from === 'them' }" :aria-label="`反应：${normalizeReaction(message.reaction)}`">{{ normalizeReaction(message.reaction) }}</span></div><p v-if="message.from === 'them' && message.translation && chatTranslationEnabled()" class="message-translation">{{ message.translation }}</p></template></div>
                 <time v-if="isLastInRun(index)" class="message-timestamp" :class="message.from">{{ messageTime(message) }}</time>
 
               </div>
             </div>
             </template>
-            <div v-if="userTyping || (characterTyping && activeChat)" class="typing-row" :class="{ me: userTyping && !characterTyping, them: characterTyping }" role="status" :aria-label="characterTyping ? `${activeChat.name}正在输入` : '我正在输入'">
-              <span v-if="characterTyping" class="tiny-avatar" :class="{ 'avatar-placeholder': !activeChat.avatarImage }" :style="{'--avatar-color': activeChat.color}"><img v-if="activeChat.avatarImage" :src="activeChat.avatarImage" alt=""/><span v-else></span></span>
-              <span v-else class="tiny-avatar user-tiny-avatar"><img v-if="activeUserAvatar" :src="activeUserAvatar" alt="我的头像"/><span v-else></span></span>
-              <span class="typing-bubble"><i></i><i></i><i></i></span>
-            </div>
           </main>
           <p v-if="replyError" class="reply-status reply-error" role="alert">{{ replyError }}</p>
             <div class="composer" :class="{ 'composer-with-quote': quoteDraft }">
               <div v-if="quoteDraft" class="quote-compose-preview"><span><strong>回复 {{ quoteDraft.from === 'me' ? '自己' : activeChat.name }}</strong><span>{{ quoteDraft.text }}</span></span><button type="button" aria-label="取消引用" @click="clearQuoteDraft">×</button></div>
               <form class="composer-input-row" @submit.prevent="sendMessage">
-                <button type="button" class="composer-tool composer-add" aria-label="添加附件" @click="toggleAttachments"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-                <div class="composer-field">
-                  <textarea v-model="draft" aria-label="输入消息" placeholder="发消息…" autocomplete="off" rows="1" @keydown.enter="onComposerEnter" />
-                  <button type="button" class="composer-tool composer-camera" aria-label="发送图片" title="从相册发送图片" @click="imageInput?.click()"><svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
-                  <input ref="imageInput" class="hidden-image-input" type="file" accept="image/*" aria-label="选择图片" @change="handleImageSelected" />
+                <div class="composer-entry-row">
+                  <textarea v-model="draft" aria-label="输入消息" placeholder=" " autocomplete="off" rows="1" @keydown.enter="onComposerEnter" />
                 </div>
-                <button v-if="draft.trim()" class="send-button" aria-label="发送消息" :disabled="replyLoading"><svg viewBox="0 0 24 24"><path d="M4 12h15M13 5l7 7-7 7"/></svg></button>
-                <button v-else type="button" class="composer-tool composer-mic" :class="{ recording: isRecording }" :aria-label="isRecording ? '结束录音' : '录制语音消息'" :title="isRecording ? '点击结束录音' : '点击录制语音'" @click="startVoiceRecording"><svg v-if="!isRecording" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/></svg><span v-else class="recording-indicator" aria-hidden="true"></span></button>
-                <button v-if="!replyLoading" type="button" class="receive-button" aria-label="接收联系人回复" title="接收回复" :disabled="!messages.some((message) => message.from === 'me')" @click="requestReply()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" /></svg></button>
+                <div class="composer-toolbar">
+                  <button type="button" class="composer-tool composer-mic" :class="{ recording: isRecording }" :aria-label="isRecording ? '结束录音' : '录制语音消息'" :title="isRecording ? '点击结束录音' : '点击录制语音'" @click="startVoiceRecording"><svg v-if="!isRecording" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="12.5" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/></svg><span v-else class="recording-indicator" aria-hidden="true"></span></button>
+                  <button type="button" class="composer-tool composer-image" aria-label="发送文字图" title="从相册发送图片" @click="imageInput?.click()"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3.5" width="18" height="17" rx="2.5"/><circle cx="8.3" cy="9" r="1.6"/><path d="m4 18 5.5-5.5 3.4 3.4 2.1-2.1 5 5"/></svg></button>
+                  <button type="button" class="composer-tool composer-camera" aria-label="拍照（占位）" title="拍照功能暂未开放" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5h4l1.6-2h6.8l1.6 2h4v12H3z"/><circle cx="12" cy="13.5" r="3.5"/></svg></button>
+                  <button type="button" class="composer-tool composer-extra" aria-label="更多功能（占位）" title="更多功能暂未开放" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></svg></button>
+                  <button type="button" class="composer-tool composer-send" aria-label="发送消息" :disabled="!draft.trim() || replyLoading" @click="sendMessage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 21 3l-7 18-3.4-7.1L3 11.5Z"/><path d="M10.6 13.9 21 3"/></svg></button>
+                  <button v-if="!replyLoading" type="button" class="composer-tool composer-receive" aria-label="接收联系人回复" title="接收回复" :disabled="!messages.some((message) => message.from === 'me')" @click="requestReply()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></button>
+                  <span v-else class="composer-tool composer-loading" aria-hidden="true"><i></i><i></i><i></i></span>
+                </div>
+                <input ref="imageInput" class="hidden-image-input" type="file" accept="image/*" aria-label="选择图片" @change="handleImageSelected" />
               </form>
             </div>
         </section>
@@ -2275,8 +2367,8 @@ function removeContact(person) {
           <i />
         </header>
         <div class="chat-settings-scroll">
-          <div class="chat-settings-intro"><div class="chat-settings-person"><img v-if="activeChat.avatarImage" :src="activeChat.avatarImage" alt=""/><span v-else>{{ (activeChat.name || '？').slice(0, 1) }}</span></div><div><span class="chat-settings-eyebrow">A SPACE FOR YOUR CONVERSATION</span><h3>{{ chatDisplayName(activeChat) }}</h3><p>让这段对话，更贴近你的习惯。</p></div></div>
-          <div class="chat-settings-group-title"><h3>对话偏好</h3><span>CONVERSATION</span></div>
+          <div class="chat-settings-intro"><div class="chat-settings-person"><img v-if="activeChat.avatarImage" :src="activeChat.avatarImage" alt=""/><span v-else>{{ (activeChat.name || '？').slice(0, 1) }}</span></div><div><span class="chat-settings-eyebrow">聊天空间</span><h3>{{ chatDisplayName(activeChat) }}</h3><p>让这段对话，更贴近你的习惯。</p></div></div>
+          <div class="chat-settings-group-title"><h3>对话偏好</h3></div>
           <div class="chat-settings-group">
           <section class="chat-setting-card remark-setting-card" role="button" tabindex="0" @click="openChatSettingEditor('remark')" @keydown.enter="openChatSettingEditor('remark')" @keydown.space.prevent="openChatSettingEditor('remark')">
             <span class="chat-setting-icon remark-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Zm17.71-10.04a1 1 0 0 0 0-1.42l-2.5-2.5a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 2-1.66Z"/></svg></span>
@@ -2295,7 +2387,7 @@ function removeContact(person) {
             <div class="chat-setting-copy"><strong>图片传输画质</strong><small>{{ selectedImageQuality()?.label }} · {{ selectedImageQuality()?.tokens }} tokens/张</small></div>
           </section>
           </div>
-          <div class="chat-settings-group-title"><h3>回复展示</h3><span>EXPRESSION</span></div>
+          <div class="chat-settings-group-title"><h3>回复展示</h3></div>
           <div class="chat-settings-group">
           <section class="chat-setting-card">
             <span class="chat-setting-icon status-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 2.8 6.1 6.7.8-4.9 4.6 1.3 6.6L12 16.8 6.1 20l1.1-6.5L2 8.9l6.8-.8L12 2Z"/></svg></span>
@@ -2313,7 +2405,7 @@ function removeContact(person) {
             <button type="button" class="toggle-switch" :class="{ on: thoughtPreviewEnabled() }" role="switch" :aria-checked="thoughtPreviewEnabled()" aria-label="显示回复前的思绪摘要" @click="setThoughtPreviewEnabled(!thoughtPreviewEnabled())"><i /></button>
           </section>
           </div>
-          <div class="chat-settings-group-title"><h3>聊天记录</h3><span>HISTORY</span></div>
+          <div class="chat-settings-group-title"><h3>聊天记录</h3></div>
           <div class="chat-settings-group chat-settings-history-group">
           <section class="chat-setting-card history-setting-card">
             <span class="chat-setting-icon history-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 14H7L6 7Zm3-4h6l1 2H8l1-2ZM4 5h16v2H4V5Zm5 5h2v8H9v-8Zm4 0h2v8h-2v-8Z"/></svg></span>
@@ -2350,9 +2442,9 @@ function removeContact(person) {
     <div v-if="characterStatusOpen && latestCharacterStatus && activeChat" class="acrylic-overlay character-status-overlay" role="dialog" aria-modal="true" aria-label="角色状态" @click.self="characterStatusOpen = false">
       <section class="character-ticket-card">
         <button type="button" class="character-ticket-close" aria-label="关闭角色状态" @click="characterStatusOpen = false">×</button>
-        <div class="character-ticket-top"><span>PERSONAL MOMENT</span><i>✦</i></div>
+        <div class="character-ticket-top"><span>角色此刻状态</span><i>✦</i></div>
         <div class="character-ticket-avatar" :style="{ '--avatar-color': activeChat.color || '#b9a58b' }"><img v-if="activeChat.avatarImage" :src="activeChat.avatarImage" alt="" /><span v-else>{{ (activeChat.name || '？').slice(0, 1) }}</span></div>
-        <h2>{{ chatDisplayName(activeChat) }}</h2><p class="character-ticket-caption">A NOTE FROM THIS MOMENT</p>
+        <h2>{{ chatDisplayName(activeChat) }}</h2><p class="character-ticket-caption">即时状态记录</p>
         <div class="character-ticket-perforation" aria-hidden="true"><span /><i /><span /></div>
         <p v-if="latestCharacterStatus.feeling" class="status-feeling">“{{ latestCharacterStatus.feeling }}”</p><p v-if="latestCharacterStatusTranslation?.feeling && chatTranslationEnabled()" :class="{ 'status-feeling-translation': true }">“{{ latestCharacterStatusTranslation.feeling }}”</p>
         <div class="status-metrics"><div class="status-metric"><span>亲近感</span><div class="status-track"><i :style="{ width: `${latestCharacterStatus.closeness ?? 0}%` }" /></div><strong>{{ latestCharacterStatus.closeness ?? '—' }}</strong></div><div class="status-metric"><span>安心感</span><div class="status-track"><i :style="{ width: `${latestCharacterStatus.security ?? 0}%` }" /></div><strong>{{ latestCharacterStatus.security ?? '—' }}</strong></div><div class="status-metric"><span>情绪能量</span><div class="status-track"><i :style="{ width: `${latestCharacterStatus.energy ?? 0}%` }" /></div><strong>{{ latestCharacterStatus.energy ?? '—' }}</strong></div><div class="status-metric"><span>心动感</span><div class="status-track"><i :style="{ width: `${latestCharacterStatus.heartFlutter ?? 0}%` }" /></div><strong>{{ latestCharacterStatus.heartFlutter ?? '—' }}</strong></div></div>
@@ -2426,9 +2518,14 @@ function removeContact(person) {
         <section v-else class="friend-profile-page" role="dialog" aria-modal="true" aria-label="人物主页">
           <header class="friend-search-header"><button type="button" aria-label="返回搜索结果" @click="selectedFriend = null">‹</button><h2>个人主页</h2><i /></header>
           <div class="friend-profile-content">
-            <div class="friend-profile-avatar" :style="selectedFriend.avatar ? { backgroundImage: `url(${selectedFriend.avatar})` } : {}"><span v-if="!selectedFriend.avatar">{{ selectedFriend.name.slice(0, 1) }}</span></div>
-            <h3>{{ selectedFriend.name }}</h3><p>ID: {{ virtualAccountId(selectedFriend) }}</p>
-            <button class="friend-add-button" type="button" :disabled="sections[0].chats.some((chat) => chat.id === selectedFriend.id)" @click="addFriend(selectedFriend)">{{ sections[0].chats.some((chat) => chat.id === selectedFriend.id) ? '已添加' : '添加好友' }}</button>
+            <div class="friend-profile-cover" :style="selectedFriend.avatar ? { backgroundImage: `linear-gradient(180deg, rgba(20,24,28,.22), rgba(20,24,28,.04)), url(${selectedFriend.avatar})` } : {}" aria-hidden="true"></div>
+            <div class="friend-profile-main">
+              <div class="friend-profile-actions">
+                <div class="friend-profile-avatar" :style="selectedFriend.avatar ? { backgroundImage: `url(${selectedFriend.avatar})` } : {}"><span v-if="!selectedFriend.avatar">{{ selectedFriend.name.slice(0, 1) }}</span></div>
+                <button class="friend-add-button" type="button" :disabled="sections[0].chats.some((chat) => chat.id === selectedFriend.id)" @click="addFriend(selectedFriend)">{{ sections[0].chats.some((chat) => chat.id === selectedFriend.id) ? '已添加' : '添加好友' }}</button>
+              </div>
+              <h3>{{ selectedFriend.name }}</h3><p>ID: {{ virtualAccountId(selectedFriend) }}</p>
+            </div>
           </div>
         </section>
       </div>
@@ -2480,15 +2577,22 @@ function removeContact(person) {
             <span class="preset-config-header-spacer" aria-hidden="true" />
           </header>
           <div class="preset-config-scroll">
-            <div class="preset-visual-intro"><span>WORDS SHAPE THE CONVERSATION</span><h3>给对话一点自己的节奏。</h3><p>整理提示词，调整表达的可能性。</p></div>
-            <p class="preset-config-section-title">当前预设</p>
-            <button class="preset-name-card" type="button" aria-label="修改预设名称" @click="openPresetNameDialog"><span class="preset-config-icon">✧</span><span class="preset-name-copy"><strong>预设名称</strong><small>{{ presetDraft.name || '点击修改预设名称' }}</small></span><span class="preset-entry-chevron">›</span></button>
-            <p class="preset-config-section-title preset-parameters-title">模型参数 <small>按需调整，保持默认也可以</small></p>
-            <div class="preset-parameters-group">
+            <div class="preset-config-toolbar">
+              <label class="preset-switcher"><span>使用预设</span><select :value="presetDraft.id" aria-label="切换预设配置" @change="switchPresetDraft($event.target.value)"><option v-for="preset in presetDraftLibrary" :key="preset.id" :value="preset.id">{{ preset.name }}</option></select></label>
+              <button type="button" @click="copyPresetDraft">复制副本</button><button type="button" @click="resetPresetDraft">重置默认</button>
+            </div>
+            <button class="preset-name-card preset-current-name" type="button" aria-label="修改预设名称" @click="openPresetNameDialog">
+              <span class="preset-name-copy"><small>当前预设</small><strong>{{ presetDraft.name || '未命名预设' }}</strong></span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z"/></svg>
+            </button>
+            <details class="preset-parameters">
+              <summary><span>模型参数</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+              <div class="preset-parameters-group">
             <label class="preset-name-card"><span class="preset-config-icon">✧</span><span class="preset-name-copy"><strong>对话温度</strong><small>控制回复的随机性与表达变化</small></span><span class="preset-range-control"><input v-model.number="presetDraft.temperature" type="range" min="0" max="2" step="0.05" aria-label="对话温度" /><output>{{ Number(presetDraft.temperature ?? 1).toFixed(2) }}</output></span></label>
             <label class="preset-name-card"><span class="preset-config-icon">✧</span><span class="preset-name-copy"><strong>Top-K</strong><small>0 表示不启用，限制候选词范围</small></span><span class="preset-range-control"><input v-model.number="presetDraft.top_k" type="range" min="0" max="100" step="1" aria-label="Top-K" /><output>{{ presetDraft.top_k ?? 0 }}</output></span></label>
             <label class="preset-name-card"><span class="preset-config-icon">✧</span><span class="preset-name-copy"><strong>Top-P</strong><small>0 表示不启用，按累计概率筛选</small></span><span class="preset-range-control"><input v-model.number="presetDraft.top_p" type="range" min="0" max="1" step="0.01" aria-label="Top-P" /><output>{{ Number(presetDraft.top_p ?? 0).toFixed(2) }}</output></span></label>
-            </div>
+              </div>
+            </details>
             <div class="preset-config-section-title"><span>提示词条目 <small>{{ presetDraft.entries.length }} 项</small></span><button type="button" @click="addPresetEntry">＋ 添加</button></div>
             <article v-for="(entry, index) in presetDraft.entries" :key="entry.id" class="preset-setting-card" :class="{ dragging: draggingPresetIndex === index, 'entry-disabled': !entry.enabled }">
               <button class="preset-entry-summary" type="button" @click="openPresetDetail(index)">
@@ -2514,6 +2618,11 @@ function removeContact(person) {
             <section class="preset-detail-dialog" role="dialog" aria-modal="true" aria-label="编辑预设条目">
               <header><div><span class="preset-detail-eyebrow">PROMPT EDITOR / {{ newPresetEntry ? 'NEW' : String(presetDetailIndex + 1).padStart(2, '0') }}</span><h3>{{ newPresetEntry ? '新增预设条目' : '编辑预设条目' }}</h3></div><button type="button" aria-label="关闭" @click="closePresetDetail">×</button></header>
               <label>条目标题<input v-model="editedPresetEntry.name" maxlength="36" placeholder="条目名称" /></label>
+              <div class="preset-injection-fields">
+                <label>注入方式<select v-model="editedPresetEntry.injectionMode"><option v-for="(label, mode) in presetModeLabels" :key="mode" :value="mode">{{ label }}</option></select></label>
+                <label>角色<select v-model="editedPresetEntry.role"><option v-for="(label, role) in presetRoleLabels" :key="role" :value="role">{{ label }}</option></select></label>
+                <label>注入深度<input v-model.number="editedPresetEntry.injectionDepth" type="number" min="0" :max="MAX_INJECTION_DEPTH" step="1" :disabled="editedPresetEntry.injectionMode !== 'depth'" title="0 为聊天记录之后，1 为最后一条聊天消息之前" /></label>
+              </div>
               <label>详细内容<textarea v-model="editedPresetEntry.content" rows="9" placeholder="写下这条提示词……" /></label>
               <div class="preset-detail-meta"><span>完成后，记得保存整份预设</span><span>{{ editedPresetEntry.content?.length || 0 }} 字符</span></div>
               <footer>
@@ -2526,14 +2635,22 @@ function removeContact(person) {
           </div>
           <div v-if="presetDeleteIndex >= 0 && presetDraft?.entries[presetDeleteIndex]" class="preset-delete-overlay" @click.self="cancelRemovePresetEntry" @keydown.esc="cancelRemovePresetEntry">
             <section class="preset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="preset-delete-title">
-              <span class="preset-delete-icon" aria-hidden="true">⚠️</span>
+              <span class="preset-delete-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 2.8 20h18.4L12 3.5Z"/><path d="M12 9v5m0 3h.01"/></svg></span>
               <h3 id="preset-delete-title">确认删除该条目？</h3>
               <p>删除后需要重新添加，确定要删除「{{ presetDraft.entries[presetDeleteIndex].name || '未命名条目' }}」吗？</p>
               <footer><button type="button" @click="cancelRemovePresetEntry">取消</button><button type="button" class="confirm" @click="confirmRemovePresetEntry">确认删除</button></footer>
             </section>
           </div>
           <div v-if="presetDragGhost" class="preset-drag-ghost" :style="{ left: `${presetDragGhost.left}px`, top: `${presetDragGhost.top}px`, width: `${presetDragGhost.width}px`, minHeight: `${presetDragGhost.height}px` }" aria-hidden="true"><span class="preset-config-icon">✦</span><div class="preset-entry-copy"><strong>{{ presetDragGhost.entry.name || '未命名条目' }}</strong><small>{{ presetDragGhost.entry.content }}</small></div><span class="preset-ghost-grip">☰</span></div>
-          <footer class="preset-config-footer"><button type="button" @click="presetDraft = null">取消</button><button type="button" @click="savePreset">保存预设</button></footer>
+          <div v-if="presetDeleteDialogOpen && presetDraft && presetDraft.id !== DEFAULT_PRESET_ID" class="preset-delete-overlay" @click.self="cancelDeletePresetDraft" @keydown.esc="cancelDeletePresetDraft">
+            <section class="preset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="preset-config-delete-title">
+              <span class="preset-delete-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 2.8 20h18.4L12 3.5Z"/><path d="M12 9v5m0 3h.01"/></svg></span>
+              <h3 id="preset-config-delete-title">确认删除预设？</h3>
+              <p>确定删除「{{ presetDraft.name }}」吗？保存后将切换到「{{ presetDraftLibrary.find(item => item.id === DEFAULT_PRESET_ID)?.name || '默认预设' }}」。此操作无法撤销。</p>
+              <footer><button type="button" @click="cancelDeletePresetDraft">取消</button><button type="button" class="confirm" @click="confirmDeletePresetDraft">确认删除</button></footer>
+            </section>
+          </div>
+          <footer class="preset-config-footer"><button v-if="presetDraft.id !== DEFAULT_PRESET_ID" class="preset-delete-config" type="button" @click="deletePresetDraft">删除预设</button><button type="button" @click="presetDraft = null">取消</button><button type="button" @click="savePreset">保存并启用</button></footer>
         </section>
       </div>
     </transition>
@@ -2595,7 +2712,7 @@ function removeContact(person) {
 @media(max-width:600px){.conversation-page{padding-right:18px;padding-left:18px}.conversation-header{height:78px}.conversation-header .back-button,.dialog-more{width:44px;height:44px}.conversation-header .back-button svg{width:25px}.dialog-more svg{width:26px}.conversation-identity{top:7px}.dialog-avatar{width:70px;height:70px}.conversation-identity.couple-mode{top:4px;grid-template-columns:58px 90px 58px;grid-template-rows:58px auto;column-gap:4px}.couple-mode .dialog-avatar{width:58px;height:58px}.heartbeat-wave{width:90px;height:54px;gap:2px}.heartbeat-wave i{width:2.5px}.identity-name{margin-top:-7px;padding:5px 11px 6px 14px;font-size:15px}.couple-mode .identity-name{margin-top:0}.identity-name i{font-size:20px}.message-list{padding-top:82px;padding-bottom:12px} .message-list .message-row{margin-bottom:10px}.message-list .message-row.has-tail{margin-bottom:16px}.message-bubble{max-width:86%;padding:9px 13px;border-radius:21px;font-size:15px;line-height:1.4}.message-row.me .message-bubble{border-radius:21px}.message-row.them .message-bubble:after,.message-row.me .message-bubble:after{bottom:-5px;width:13px;height:14px}.message-row.me time{padding-top:3px;font-size:11px}.composer{height:54px;gap:1px;padding:4px 6px}.send-button{width:34px;height:36px}.send-button svg{width:24px}.composer-tool{width:31px;height:36px}.composer-tool svg{width:21px;height:21px}.composer input{height:42px;margin-left:3px;padding:0 8px;font-size:14px}.message-list{scroll-padding-top:80px}}
 .typing-row{display:flex;align-items:flex-end;justify-content:flex-start;gap:8px;margin:4px 0 16px}.typing-row.me{justify-content:flex-end}.typing-row.me .tiny-avatar{order:1}.typing-row.me .typing-bubble{order:0;border-radius:30px;color:#315bb5;background:#edf3ff;box-shadow:none}.typing-row.them .typing-bubble{border-radius:30px;color:#4b4f55;background:#fff;box-shadow:0 3px 10px rgba(38,42,48,.065),0 1px 3px rgba(38,42,48,.035)}.typing-bubble{height:42px;min-width:58px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 15px;border-radius:30px}.typing-bubble i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.65;animation:typing-bounce .9s ease-in-out infinite}.typing-row.me .typing-bubble i{opacity:.9}.typing-bubble i:nth-child(2){animation-delay:.14s}.typing-bubble i:nth-child(3){animation-delay:.28s}@keyframes typing-bounce{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-4px);opacity:1}}@media(prefers-reduced-motion:reduce){.typing-bubble i{animation:none;opacity:.8}}
 .reply-status{margin:0 20px 8px;color:#99918a;font-size:12px}.receive-button{width:34px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#303134;background:transparent;cursor:pointer}.receive-button svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}.receive-button:disabled{opacity:.35;cursor:not-allowed}.reply-error{color:#b46f66}
-.acrylic-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:center;padding:16px;background:#24242438;backdrop-filter:blur(10px) saturate(1.15);-webkit-backdrop-filter:blur(10px) saturate(1.15)}
+.acrylic-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;background:#24242438;backdrop-filter:blur(10px) saturate(1.15);-webkit-backdrop-filter:blur(10px) saturate(1.15)}
 .message-menu-backdrop{position:fixed;inset:0;z-index:100;background:#00000008}.message-menu-group{position:fixed;z-index:1;width:min(280px,calc(100vw - 24px));max-height:min(82dvh,480px);display:flex;flex-direction:column;gap:8px;transform-origin:var(--menu-origin-x) var(--menu-origin-y);animation:message-pop-in .48s cubic-bezier(.16,1.35,.35,1) both;filter:drop-shadow(0 18px 32px #1113)}.reaction-picker{height:52px;flex:none;display:flex;align-items:center;justify-content:space-around;padding:0 8px;border:1px solid #ffffffb8;border-radius:28px;background:#ffffffa8;box-shadow:inset 0 1px #ffffffb0;backdrop-filter:blur(26px) saturate(1.55);-webkit-backdrop-filter:blur(26px) saturate(1.55)}.reaction-picker button{width:38px;height:40px;padding:0;border:0;border-radius:50%;background:transparent;font-size:25px;cursor:pointer;transition:transform .15s}.reaction-picker button:active{transform:scale(1.22)}.message-action-sheet{overflow:auto;padding:6px 16px;border:1px solid #ffffffb8;border-radius:18px;background:linear-gradient(145deg,#ffffffc9,#f7f7f7a8);box-shadow:inset 0 1px #ffffffc9;backdrop-filter:blur(30px) saturate(1.55);-webkit-backdrop-filter:blur(30px) saturate(1.55);color:#262626;scrollbar-width:thin}.message-action-title{margin:4px 0 8px;color:#8e8e93;text-align:left;font-size:13px}.message-action-sheet>button{width:100%;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0;border:0;border-bottom:1px solid #ffffff70;background:transparent;color:#262626;text-align:left;font-size:16px;font-weight:400;cursor:pointer}.message-action-sheet>button:last-child{border:0}.message-action-sheet>button:active{color:#8e8e93}.message-action-sheet>button>span:last-child{color:#262626;font-size:18px}.message-action-sheet>button.message-delete-action,.message-action-sheet>button.message-delete-action>span:last-child{color:#ed4956}.message-action-sheet>button:disabled{opacity:.45}.message-action-sheet>button.message-cancel-action{height:46px;justify-content:center;margin-top:7px;border:0;border-radius:13px;font-weight:600}.message-edit-dialog{width:min(100%,440px);padding:18px;border:1px solid #ffffffc9;border-radius:28px;background:linear-gradient(145deg,#ffffffed,#f4f3f0e8);box-shadow:0 22px 70px #17171730;backdrop-filter:blur(28px) saturate(1.35);-webkit-backdrop-filter:blur(28px) saturate(1.35);color:#484744;animation:message-sheet-in .22s ease-out}.message-reaction{position:absolute;right:2px;bottom:-12px;z-index:1;min-width:27px;height:24px;display:grid;place-items:center;padding:0 5px;border:2px solid #fff;border-radius:14px;background:#fff;box-shadow:0 2px 8px #00000018;font-size:15px;line-height:1}.message-row.me .message-reaction{right:auto;left:2px}.message-reaction.character-reaction{animation:character-reaction-pop .42s cubic-bezier(.18,.89,.32,1.35) both;transform-origin:center}.message-edit-dialog{align-self:center}
 .message-edit-dialog{align-self:center}.message-edit-dialog h3{margin:0 0 14px;font-size:16px;font-weight:600}.message-edit-dialog textarea{width:100%;resize:vertical;padding:12px;border:1px solid #e8e5df;border-radius:16px;outline:none;color:#4b4945;background:#ffffffc9;font:inherit;font-size:14px;line-height:1.5}.message-edit-dialog footer{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}.message-edit-dialog footer button,.multi-delete-bar button{padding:9px 15px;border:0;border-radius:18px;color:#625f59;background:#eeece8;font-size:12px;cursor:pointer}.message-edit-dialog footer button:last-child{color:white;background:#8d9589}
 .multi-delete-bar{position:fixed;left:0;right:0;bottom:0;z-index:90;display:flex;align-items:center;gap:10px;padding:12px 18px calc(12px + env(safe-area-inset-bottom));border:0;border-top:1px solid #e7e8e8;border-radius:0;background:#f8f8f8;color:#67645f;font-size:12px}.multi-delete-bar span{flex:1}.multi-delete-bar button{padding:8px 15px;border:0;border-radius:8px;box-shadow:none;font-size:13px;cursor:pointer}.multi-delete-bar button:disabled{opacity:.45}.multi-delete-button{color:#fff !important;background:#ed4956 !important}.multi-cancel-button{color:#777 !important;background:#e9e9e9 !important}
@@ -2607,9 +2724,6 @@ function removeContact(person) {
 .message-bubble-wrap{flex-direction:column;align-items:flex-start}.quoted-message{width:min(100%,300px);box-sizing:border-box;display:flex;flex-direction:column;gap:3px;margin:0 0 -3px;padding:8px 11px;border-left:2px solid #c9ccd1;border-radius:8px 8px 0 0;color:#6f747b;background:rgba(245,246,248,.9);font-size:11px;line-height:1.4}.quoted-message strong{overflow:hidden;color:#727780;font-size:10px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.quoted-message span{display:-webkit-box;overflow:hidden;color:#888d94;text-overflow:ellipsis;-webkit-box-orient:vertical;-webkit-line-clamp:2}.message-row.me .quoted-message{align-self:flex-end;border-left:0;border-right:2px solid #aebfe2}
 .message-bubble-wrap{position:relative;width:100%;max-width:100%;align-self:inherit;display:flex}.message-row.me .message-bubble-wrap{align-self:stretch;margin-left:auto;justify-content:flex-end}.message-row.them .message-bubble-wrap{align-self:stretch;margin-right:auto;justify-content:flex-start}.quoted-message{width:fit-content;max-width:min(100%,300px);box-sizing:border-box;display:flex;flex-direction:column;gap:3px;margin:0 0 8px;padding:0 0 7px;border-bottom:1px solid rgba(110,116,124,.14);color:#8a8a8d;font-size:11px;line-height:1.35}.quoted-message strong{font-size:10px;font-weight:650;opacity:.85}.quoted-message>span{overflow:hidden;display:-webkit-box;opacity:.9;text-overflow:ellipsis;-webkit-box-orient:vertical;-webkit-line-clamp:2}.message-row.me .quoted-message{align-self:stretch;color:#6e83b8;text-align:left}.composer-with-quote{height:auto;min-height:68px;flex-direction:column;align-items:stretch;gap:3px;padding:7px 9px}.quote-compose-preview{display:flex;align-items:center;gap:8px;padding:4px 8px 5px;border-radius:13px;background:#f3f3f2}.quote-compose-preview>span{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}.quote-compose-preview strong{color:#787873;font-size:10px;font-weight:600}.quote-compose-preview>span>span{overflow:hidden;color:#999994;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.quote-compose-preview button{width:23px;height:23px;border:0;border-radius:50%;color:#888;background:#e7e7e5;font-size:17px;line-height:1;cursor:pointer}.composer-input-row{width:100%;min-height:48px;display:flex;align-items:center;gap:4px;border:0;background:transparent}.composer-input-row textarea{margin-left:8px}.message-toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 92px);z-index:110;transform:translateX(-50%);padding:11px 18px;border:1px solid #ffffffc9;border-radius:22px;background:#ffffffed;box-shadow:0 8px 28px #2222;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:#514f4a;font-size:12px;white-space:nowrap}
 :deep(.conversation-page){height:100%;min-height:0;box-sizing:border-box;padding:0}
-:deep(.conversation-header){position:relative;z-index:5;height:calc(82px + env(safe-area-inset-top))!important;box-sizing:border-box;display:flex!important;flex-direction:row!important;align-items:center;gap:6px;padding:calc(env(safe-area-inset-top) + 10px) 15px 0;border-bottom:1px solid #ffffff70;background:rgba(255,255,255,.56);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5)}
-:deep(.conversation-header){height:calc(92px + env(safe-area-inset-top))!important;padding:calc(env(safe-area-inset-top) + 20px) 15px 0!important}
-@media(max-width:600px){:deep(.conversation-header){height:calc(92px + env(safe-area-inset-top))!important;padding:calc(env(safe-area-inset-top) + 20px) 14px 0!important}}
 
 :deep(.conversation-back),:deep(.conversation-settings){width:38px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#28292b;background:transparent;box-shadow:none;cursor:pointer;transition:background .18s,transform .18s}
 :deep(.conversation-back:active),:deep(.conversation-settings:active){background:#00000009;transform:scale(.94)}
@@ -2652,7 +2766,7 @@ function removeContact(person) {
 .visitor-warning-actions .visitor-warning-confirm{border-color:#758b79;color:#fff;background:#758b79}
 @media(max-width:600px){.visitor-warning-inline{margin-left:0}}
 /* 朋友圈模板位于多个 scoped style 块中，深层组件选择器确保动态区样式实际命中 DOM。 */
-:deep(.moments-page){color:#343638;background:#fff}
+:deep(.moments-page){color:#343638}
 :deep(.moment-manage){display:flex;gap:10px;margin-top:5px}.moment-manage button{padding:2px 0;border:0;color:#899096;background:transparent;font:inherit;font-size:11px;cursor:pointer}
 :deep(.moment-post){display:flex;align-items:flex-start;gap:12px;padding:17px 0;border-bottom:1px solid #e8e7e4}
 :deep(.moment-avatar){width:42px;height:42px;flex:none;display:grid;place-items:center;overflow:hidden;border:0;border-radius:50%;color:#777;background:#e8e5e0;font-size:14px}
@@ -2711,19 +2825,14 @@ function removeContact(person) {
 </style>
 <style scoped>
 :deep(.message-bubble .message-text) { font-family: var(--chat-bubble-font-family, inherit); white-space: pre-wrap; overflow-wrap: anywhere; }
-:deep(.conversation-overlay){background:#fff}
-:deep(.conversation-page){background:#fff}
-:deep(.conversation-header){height:64px!important;box-sizing:border-box;display:flex!important;flex-direction:row!important;align-items:center;gap:12px;padding:0 16px;border:0!important;border-bottom:0!important;background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none}
 :deep(.conversation-back),:deep(.conversation-settings){width:38px;height:38px;display:grid;place-items:center;flex:none;padding:0;border:0;border-radius:50%;color:#4b4f55;background:transparent;box-shadow:none;cursor:pointer;transition:background .18s,transform .18s}
 :deep(.conversation-back:active),:deep(.conversation-settings:active){background:#0000000a;transform:scale(.94)}
 :deep(.conversation-back svg){width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-:deep(.conversation-title){min-width:0;flex:1;overflow:hidden;margin:0;color:#4b4f55;text-align:left;text-overflow:ellipsis;white-space:nowrap;font-size:19px;font-weight:600;letter-spacing:-.035em}
 :deep(.conversation-status-button){width:27px;height:27px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#aaa;background:transparent;cursor:pointer;transition:transform .18s,color .18s}
 :deep(.conversation-status-button:active){transform:scale(.9);color:#888}
 :deep(.conversation-status-button:disabled){opacity:.35;cursor:default}
 :deep(.conversation-status-button svg){width:16px;height:16px;fill:currentColor;stroke:none}
 :deep(.conversation-actions){display:flex;align-items:center;gap:4px;margin-left:auto}
-:deep(.character-status-overlay){align-items:center;padding:22px}
 :deep(.character-ticket-card){width:min(100%,330px);position:relative;box-sizing:border-box;padding:24px 23px 18px;overflow:hidden;border:1px solid #e7e7e7;border-radius:5px;background:#fff;color:#34332f;box-shadow:0 22px 70px #1114;font-family:Georgia,'Times New Roman',serif}
 :deep(.character-ticket-close){position:absolute;top:10px;right:12px;width:30px;height:30px;border:0;background:transparent;color:#69665e;font:24px/1 sans-serif;cursor:pointer}
 :deep(.character-ticket-top),:deep(.character-ticket-footer){display:flex;align-items:center;justify-content:space-between;color:#8a8377;font:9px/1.4 monospace;letter-spacing:.17em}
@@ -2745,33 +2854,7 @@ function removeContact(person) {
 :deep(.character-ticket-footer){padding-top:12px;border-top:1px dashed #c9c0b4;font-size:8px;letter-spacing:.1em}
 :deep(.conversation-settings svg){width:21px;height:21px;fill:currentColor;stroke:none}
 :deep(.conversation-settings svg circle){r:1.15}
-@media(max-width:600px){:deep(.conversation-header){height:64px!important;gap:10px;padding:0 14px}:deep(.conversation-back),:deep(.conversation-settings){width:36px;height:36px}:deep(.conversation-title){font-size:19px}}
 
-:deep(.message-row){align-items:flex-end;gap:8px;margin-bottom:16px}
-:deep(.message-row:not(.has-tail)){margin-bottom:16px}
-:deep(.message-row.has-tail){margin-bottom:22px}
-:deep(.message-row + .message-row){margin-top:0}
-:deep(.message-content-stack){gap:10px}
-:deep(.message-row.me){flex-wrap:nowrap}
-:deep(.message-row.them .tiny-avatar){order:0}
-:deep(.message-row.them .message-content-stack){order:1;align-items:flex-start}
-:deep(.message-row.me .message-content-stack){order:0;align-items:flex-end;margin-left:auto}:deep(.message-row.me .message-bubble-wrap){align-self:stretch;justify-content:flex-end}:deep(.message-row.me .message-bubble){margin-left:auto}
-:deep(.message-row.me .tiny-avatar){order:1}
-:deep(.message-row.me .message-content-stack){width:100%;max-width:calc(100% - 52px);min-width:0;flex:1 1 auto}
-:deep(.message-row.them .message-content-stack),:deep(.message-row.me .message-content-stack){flex:1 1 0}
-:deep(.message-row.them .message-bubble),:deep(.message-row.me .message-bubble){display:block;position:relative;width:fit-content;max-width:min(100%,300px);flex:none;min-width:0;box-sizing:border-box}
-:deep(.tiny-avatar){width:40px;height:40px;flex:none;display:grid;place-items:center;align-self:flex-end;overflow:hidden;border-radius:50%;color:#555;font-size:13px;background:linear-gradient(145deg,#f1f1f1,var(--avatar-color,#dedede))}
-:deep(.tiny-avatar img){width:100%;height:100%;position:absolute;inset:0;object-fit:cover}
-:deep(.user-tiny-avatar){position:relative;background-color:#e8e5e0;background-position:center;background-size:cover}
-:deep(.user-tiny-avatar>span){color:#777;font-size:13px}
-:deep(.message-bubble){max-width:100%;padding:13px 13px;border-radius:10px;color:#262626;background:#efefef;font-size:15px;font-weight:400;line-height:1.4}
-:deep(.message-row.them .message-bubble){box-shadow:0 2px 8px rgba(38, 30, 45, .06)}
-:deep(.message-row.me .message-bubble){border-radius:10px;color:#fff;background:linear-gradient(135deg,#833ab4,#c13584);font-weight:400}
-:deep(.message-row.them .message-bubble:after),:deep(.message-row.me .message-bubble:after){display:none;content:none}
-:deep(.chat-time-divider){width:100%;margin:13px 0 15px;color:#8e8e93;text-align:center;font-size:11px;font-weight:400;line-height:1.4}
-:deep(.message-row.me time){display:none}
-:deep(.message-list .message-row:not(.has-tail)){margin-bottom:16px}
-:deep(.message-list .message-row.has-tail){margin-bottom:22px}
 @media(max-width:600px){:deep(.message-row){gap:7px;margin-bottom:14px}:deep(.message-row:not(.has-tail)){margin-bottom:14px}:deep(.message-list .message-row.has-tail){margin-bottom:18px}:deep(.message-content-stack){gap:9px;max-width:calc(100% - 48px)}:deep(.tiny-avatar){width:40px;height:40px}:deep(.message-row.them .message-bubble),:deep(.message-row.me .message-bubble){max-width:min(78%, 300px);padding:12px 12px;font-size:14px}:deep(.message-row.me time){font-size:10px}}
 
 @keyframes message-pop-in{0%{opacity:0;transform:scale(.48)}55%{opacity:1;transform:scale(1.075)}76%{transform:scale(.97)}100%{opacity:1;transform:scale(1)}}
@@ -2784,7 +2867,8 @@ function removeContact(person) {
 .moments-topbar{position:absolute;top:0;left:0;right:0;z-index:4;background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}.moments-topbar .back-button,.moments-topbar .round-action{color:#343638;background:transparent;box-shadow:none}.moments-topbar{height:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;padding-top:env(safe-area-inset-top)}
 .chat-content>.welcome{width:100%;text-align:left}
 .chat-content>.welcome .chat-list-back-button{align-self:flex-start}
-.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control>small{display:block;margin-top:8px;color:#999;font-size:11px}.moments-page{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;background:#fff;padding-top:0;padding-bottom:calc(env(safe-area-inset-bottom) + 72px);box-sizing:border-box}.moments-cover{height:min(48dvh,390px);min-height:280px;position:relative;margin-top:0;padding-top:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;background:linear-gradient(to bottom,transparent 58%,rgba(255,255,255,.24) 78%,#fff 100%),linear-gradient(145deg,#dedbd5,#b9b6b0);background-position:center;background-size:cover;cursor:pointer}.moments-cover-hint{position:absolute;right:18px;bottom:90px;color:#fff;font-size:12px;text-shadow:0 1px 8px #0008}.moments-profile{position:absolute;right:20px;bottom:-24px;display:flex;align-items:center;gap:12px;color:#fff;text-shadow:0 1px 5px #0006}.moments-profile strong{font-size:16px}.moments-avatar,.moment-avatar{width:68px;height:68px;display:grid;place-items:center;overflow:hidden;border:3px solid #fff;border-radius:50%;color:#777;background:#e8e5e0;font-size:20px}.moments-avatar img{width:100%;height:100%;object-fit:cover}.moments-feed{padding:40px 18px 24px}.moments-write{display:block;margin:0 0 14px auto;padding:8px 13px;border:0;border-radius:18px;color:#666;background:#fff;font-size:13px}.moment-post{display:flex;gap:12px;padding:17px 0;border-bottom:1px solid rgba(110,120,112,.045)}.moment-avatar{width:42px;height:42px;flex:none;border:0;font-size:14px}.moment-body{min-width:0;flex:1}.moment-body strong{color:#50627a;font-size:14px}.moment-body p{margin:7px 0;color:#333;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.moment-body small{display:block;margin-top:9px;color:#aaa;font-size:11px}.moment-image{display:block;max-width:100%;max-height:260px;margin-top:8px;border-radius:5px;object-fit:cover}.moments-empty{padding:20px 0;color:#aaa;text-align:center;font-size:12px}.moment-composer-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:#0005;backdrop-filter:blur(6px)}.moment-composer{width:min(100%,480px);max-height:calc(100dvh - 40px);overflow:auto;padding:17px;border-radius:20px;background:#fff}.moment-composer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.moment-composer header button{border:0;color:#777;background:transparent}.moment-composer .moment-publish{padding:7px 14px;border-radius:16px;color:#fff;background:#738b78}.moment-composer .moment-publish:disabled{opacity:.45}.moment-composer textarea{width:100%;min-height:130px;resize:vertical;box-sizing:border-box;border:0;outline:0;font:inherit;font-size:15px}.moment-composer-tools{display:flex;align-items:flex-end;gap:10px;margin:10px 0 16px}.moment-add-image{width:76px;height:76px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:#85888a;background:#ededed;cursor:pointer}.moment-add-image svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.moment-tool-hint{padding-bottom:4px;color:#aaa;font-size:11px}.moment-image-preview{width:76px;height:76px;position:relative}.moment-image-preview img{width:100%;height:100%;border-radius:5px;object-fit:cover}.moment-image-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;color:white;background:#555;font-size:17px}.moment-option{min-height:48px;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid #f0f0ef;color:#454746;background:transparent;text-align:left;font:inherit;font-size:13px;cursor:pointer}.moment-option-icon{width:22px;flex:none;color:#858b86;text-align:center;font-size:17px}.moment-option>span:nth-child(2){flex:none}.moment-option small{min-width:0;flex:1;overflow:hidden;color:#999;text-align:right;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.moment-option b{flex:none;color:#b6b8b6;font-size:19px;font-weight:400}.moment-option:active{background:#f8f9f7}.moment-friend-avatar{width:36px;height:36px;display:grid;place-items:center;flex:none;overflow:hidden;border-radius:50%;color:#68776c;background:#edf0eb;font-size:14px}.moment-friend-avatar img{width:100%;height:100%;object-fit:cover}.moment-friend-avatar>span{display:grid;width:100%;height:100%;place-items:center}.moment-composer>input[type=file],.moments-page>input[type=file]{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important}.moment-subdialog-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:18px;background:#0005;backdrop-filter:blur(6px)}.moment-subdialog{width:min(100%,420px);max-height:min(80dvh,620px);overflow:auto;padding:16px;border-radius:18px;background:#fff;box-shadow:0 16px 50px #0002}.moments-page .moment-composer-backdrop,.moments-page .moment-subdialog-backdrop{background:rgba(244,250,245,.72);backdrop-filter:none;-webkit-backdrop-filter:none}.moments-page .moment-composer,.moments-page .moment-subdialog{border:0;border-radius:24px;background:#fff;box-shadow:0 12px 36px rgba(75,115,84,.12)}.moments-page .moment-composer header,.moments-page .moment-subdialog header{margin-bottom:16px}.moments-page .moment-composer header button,.moments-page .moment-subdialog header button{min-height:36px;padding:0 12px;border:0;border-radius:18px;color:#568364;background:#eaf5ec;font:inherit;font-size:13px}.moments-page .moment-composer .moment-publish,.moments-page .moment-subdialog header button:last-child{color:#477b56;background:#dff1e3;font-weight:600}.moments-page .moment-composer .moment-publish:disabled{color:#7d9d84;background:#edf5ee}.moments-page .moment-option,.moments-page .moment-choice{border:0;border-radius:12px;background:#f3f8f3}.moments-page .moment-option{margin-top:7px;padding:0 12px}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:#e8f3e9}.moments-page .moment-choice{min-height:50px;margin:5px 0;padding:0 14px;color:#46554a}.moments-page .moment-choice i{color:#5b9669}.moments-page .moment-subdialog{width:min(calc(100% - 32px),446px);padding:17px;box-sizing:border-box}.moments-page .moment-option,.moments-page .moment-choice{width:100%;box-sizing:border-box;border:0;border-radius:0;background:transparent}.moments-page .moment-option{min-height:48px;margin-top:0;padding:0}.moments-page .moment-choice{min-height:48px;margin:0;padding:0}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:transparent}
+.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control>small{display:block;margin-top:8px;color:#999;font-size:11px}.moments-page{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;background:rgb(var(--moments-surface-rgb)/.96);padding-top:0;padding-bottom:calc(env(safe-area-inset-bottom) + 72px);box-sizing:border-box}.moments-cover{height:min(48dvh,390px);min-height:280px;position:relative;margin-top:0;padding-top:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;background:linear-gradient(to bottom,transparent 66%,rgb(var(--moments-surface-rgb)/.10) 78%,rgb(var(--moments-surface-rgb)/.46) 89%,rgb(var(--moments-surface-rgb)/.88) 97%,rgb(var(--moments-surface-rgb)) 100%),var(--moments-cover-image,linear-gradient(145deg,#dedbd5,#b9b6b0));background-position:center;background-size:cover;cursor:pointer}.moments-cover-hint{position:absolute;right:18px;bottom:90px;color:#fff;font-size:12px;text-shadow:0 1px 8px #0008}.moments-profile{position:absolute;right:20px;bottom:-24px;display:flex;align-items:center;gap:12px;color:#fff;text-shadow:0 1px 5px #0006}.moments-profile strong{font-size:16px}.moments-avatar,.moment-avatar{width:68px;height:68px;display:grid;place-items:center;overflow:hidden;border:3px solid #fff;border-radius:50%;color:#777;background:#e8e5e0;font-size:20px}.moments-avatar img{width:100%;height:100%;object-fit:cover}.moments-feed{padding:40px 18px 24px}.moment-post{display:flex;gap:12px;padding:17px 0;border-bottom:1px solid rgba(110,120,112,.045)}.moment-avatar{width:42px;height:42px;flex:none;border:0;font-size:14px}.moment-body{min-width:0;flex:1}.moment-body strong{color:#50627a;font-size:14px}.moment-body p{margin:7px 0;color:#333;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.moment-body small{display:block;margin-top:9px;color:#aaa;font-size:11px}.moment-image{display:block;max-width:100%;max-height:260px;margin-top:8px;border-radius:5px;object-fit:cover}.moments-empty{padding:20px 0;color:#aaa;text-align:center;font-size:12px}.moment-composer-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:#0005;backdrop-filter:blur(6px)}.moment-composer{width:min(100%,480px);max-height:calc(100dvh - 40px);overflow:auto;padding:17px;border-radius:20px;background:#fff}.moment-composer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.moment-composer header button{border:0;color:#777;background:transparent}.moment-composer .moment-publish{padding:7px 14px;border-radius:16px;color:#fff;background:#738b78}.moment-composer .moment-publish:disabled{opacity:.45}.moment-composer textarea{width:100%;min-height:130px;resize:vertical;box-sizing:border-box;border:0;outline:0;font:inherit;font-size:15px}.moment-composer-tools{display:flex;align-items:flex-end;gap:10px;margin:10px 0 16px}.moment-add-image{width:76px;height:76px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:#85888a;background:#ededed;cursor:pointer}.moment-add-image svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.moment-tool-hint{padding-bottom:4px;color:#aaa;font-size:11px}.moment-image-preview{width:76px;height:76px;position:relative}.moment-image-preview img{width:100%;height:100%;border-radius:5px;object-fit:cover}.moment-image-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;color:white;background:#555;font-size:17px}.moment-option{min-height:48px;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid #f0f0ef;color:#454746;background:transparent;text-align:left;font:inherit;font-size:13px;cursor:pointer}.moment-option-icon{width:22px;flex:none;color:#858b86;text-align:center;font-size:17px}.moment-option>span:nth-child(2){flex:none}.moment-option small{min-width:0;flex:1;overflow:hidden;color:#999;text-align:right;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.moment-option b{flex:none;color:#b6b8b6;font-size:19px;font-weight:400}.moment-option:active{background:#f8f9f7}.moment-friend-avatar{width:36px;height:36px;display:grid;place-items:center;flex:none;overflow:hidden;border-radius:50%;color:#68776c;background:#edf0eb;font-size:14px}.moment-friend-avatar img{width:100%;height:100%;object-fit:cover}.moment-friend-avatar>span{display:grid;width:100%;height:100%;place-items:center}.moment-composer>input[type=file],.moments-page>input[type=file]{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important}.moment-subdialog-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:18px;background:#0005;backdrop-filter:blur(6px)}.moment-subdialog{width:min(100%,420px);max-height:min(80dvh,620px);overflow:auto;padding:16px;border-radius:18px;background:#fff;box-shadow:0 16px 50px #0002}.moments-page .moment-composer-backdrop,.moments-page .moment-subdialog-backdrop{background:rgba(244,250,245,.72);backdrop-filter:none;-webkit-backdrop-filter:none}.moments-page .moment-composer,.moments-page .moment-subdialog{border:0;border-radius:24px;background:#fff;box-shadow:0 12px 36px rgba(75,115,84,.12)}.moments-page .moment-composer header,.moments-page .moment-subdialog header{margin-bottom:16px}.moments-page .moment-composer header button,.moments-page .moment-subdialog header button{min-height:36px;padding:0 12px;border:0;border-radius:18px;color:#568364;background:#eaf5ec;font:inherit;font-size:13px}.moments-page .moment-composer .moment-publish,.moments-page .moment-subdialog header button:last-child{color:#477b56;background:#dff1e3;font-weight:600}.moments-page .moment-composer .moment-publish:disabled{color:#7d9d84;background:#edf5ee}.moments-page .moment-option,.moments-page .moment-choice{border:0;border-radius:12px;background:#f3f8f3}.moments-page .moment-option{margin-top:7px;padding:0 12px}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:#e8f3e9}.moments-page .moment-choice{min-height:50px;margin:5px 0;padding:0 14px;color:#46554a}.moments-page .moment-choice i{color:#5b9669}.moments-page .moment-subdialog{width:min(calc(100% - 32px),446px);padding:17px;box-sizing:border-box}.moments-page .moment-option,.moments-page .moment-choice{width:100%;box-sizing:border-box;border:0;border-radius:0;background:transparent}.moments-page .moment-option{min-height:48px;margin-top:0;padding:0}.moments-page .moment-choice{min-height:48px;margin:0;padding:0}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:transparent}
+.moments-topbar .topbar-spacer{flex:1}
 .moment-generation-error-backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}.moment-generation-error-card{width:min(100%,480px);padding:26px 24px 22px;border-radius:24px;box-shadow:0 18px 55px rgba(32,55,43,.14)}.moment-generation-error-card header{margin-bottom:16px}.moment-generation-error-card header strong{font-size:19px;color:#343a36}.moment-generation-error-card p{margin:0;color:#626a65;font-size:15px;line-height:1.65;overflow-wrap:anywhere}.moment-generation-error-confirm{width:100%;min-height:46px;margin-top:22px;border:0;border-radius:14px;color:#fff;background:#648b70;font:inherit;font-size:15px;font-weight:600;cursor:pointer}.moment-generation-error-confirm:active{background:#52775e}.moment-choice{width:100%;min-height:48px;display:flex;align-items:center;justify-content:space-between;border:0;border-bottom:1px solid #eee;color:#444;background:#fff;text-align:left;font:inherit;font-size:14px}.moment-choice i{color:#718879;font-style:normal}.moment-picker-tip{color:#999;font-size:12px}.moment-friend-option{min-height:64px;display:flex;align-items:center;gap:14px;padding:8px 4px;border-bottom:0;font-size:14px}.moments-page .moment-friend-option{min-height:68px;gap:15px;padding:10px 6px;border:0}.moments-page .moment-friend-avatar{width:42px;height:42px;flex:none;border:2px solid #f2f7f1;box-shadow:0 2px 8px rgba(80,115,86,.1)}.moments-page .moment-friend-option input{width:18px;height:18px;margin:0 4px 0 0;accent-color:#78917e}.moments-page .moment-friend-option>span:last-child{line-height:1.5}.moment-friend-option input{accent-color:#78917e}.moment-friend-avatar{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;color:#68776c;background:#edf0eb}.moment-location-dialog{width:min(100%,500px)}.moment-map-preview{height:190px;position:relative;display:grid;place-items:center;overflow:hidden;margin:10px 0;border-radius:13px;background:#e9ede7}.moment-map-preview>span{z-index:1;color:#d35c4b;font-size:27px}.moment-map-preview small{position:absolute;bottom:10px;color:#737c73;font-size:10px}.moment-map-grid{position:absolute;inset:-30%;background:repeating-linear-gradient(25deg,transparent 0 32px,#fff 33px 36px,transparent 37px 70px),repeating-linear-gradient(115deg,transparent 0 48px,#d8dfd5 49px 52px,transparent 53px 90px)}.moment-location-search-row{display:flex;gap:7px}.moment-location-search{width:100%;min-height:40px;box-sizing:border-box;padding:8px 10px;border:1px solid #e6e6e6;border-radius:9px;outline:0;font:inherit;font-size:13px}.moment-location-search-row button,.moment-location-confirm{min-height:38px;padding:0 12px;border:0;border-radius:9px;color:#fff;background:#788f7e;font:inherit;font-size:12px}.moment-location-confirm{width:100%;margin:9px 0}.moment-location-confirm:disabled{opacity:.55}.moment-location-result{width:100%;padding:10px 0;border:0;border-bottom:1px solid #eee;color:#555;background:#fff;text-align:left;font:inherit;font-size:11px;line-height:1.5}
 .my-profile-card{display:flex;align-items:center;gap:15px;margin:10px 0 25px;padding:17px 16px;border:1px solid #e8ece9;border-radius:22px;background:linear-gradient(145deg,#ffffffed,#f5f8f6e8);box-shadow:0 9px 25px #30483e0b}.my-profile-avatar{width:64px;height:64px;flex:none;display:grid;place-items:center;overflow:hidden;padding:0;border:0;border-radius:50%;color:#779185;background:#e8eeeb;font-size:25px;font-weight:600}.my-profile-avatar img{width:100%;height:100%;object-fit:cover}.my-profile-copy{min-width:0;flex:1}.my-profile-copy strong{display:block;overflow:hidden;color:#3d4943;font-size:17px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.my-profile-copy p{display:-webkit-box;overflow:hidden;margin:5px 0 0;color:#78827c;font-size:12px;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}.my-profile-copy p.empty-bio{color:#9a9f9b}.my-profile-edit{display:flex;align-items:center;gap:4px;flex:none;padding:8px 0 8px 6px;border:0;color:#648574;background:transparent;font:inherit;font-size:10px;letter-spacing:.02em;cursor:pointer}.my-profile-edit span{font-size:17px;line-height:1}
 .my-page{background:transparent}
@@ -2808,6 +2892,22 @@ function removeContact(person) {
 .avatar>img{overflow:hidden}
 .avatar .online-dot{z-index:2;right:-2px;bottom:-2px;width:14px;height:14px;box-sizing:border-box;border:2px solid #fff}
 
+/* 聊天列表首页：中性浅白底色与清晰的文字层级 */
+.chat-app.chat-list-home{background:#fafafa;backdrop-filter:none;-webkit-backdrop-filter:none}
+.chat-list-home .chat-list-search{background:rgba(224,226,229,.55);border-color:rgba(255,255,255,.8);box-shadow:inset 0 1px 0 rgba(255,255,255,.8);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.chat-list-home .chat-list-search input{font-size:14px}
+.chat-list-home .welcome{margin-bottom:22px}
+.chat-list-home .welcome strong{font-size:30px;line-height:1.15}
+.chat-list-home .section-toggle{font-size:13px}
+.chat-list-home .conversation-top strong{font-size:14px;line-height:1.35}
+.chat-list-home .conversation-top time{font-size:11px}
+.chat-list-home .conversation-bottom>span{font-size:12px;line-height:1.4}
+.chat-list-home .no-results{font-size:13px;line-height:1.5}
+/* 会话列表不显示卡片外壳或行间分隔线。 */
+.chat-list-home .chat-card{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+.chat-list-home .conversation{padding:10px 0;border-bottom:0;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+.chat-list-home .conversation:active{background:rgba(0,0,0,.025)}
+
 /* 聊天列表：收紧搜索框与会话卡片，保持轻盈的磨砂质感 */
 .chat-list-search{height:42px;margin-bottom:16px;padding:0 14px;border-radius:22px}
 .chat-section{margin-bottom:13px}
@@ -2822,14 +2922,29 @@ function removeContact(person) {
 
 .topbar .back-button,.topbar .round-action{width:45px;height:45px;padding:0;border:0;border-radius:0;color:#44464a;background:transparent;box-shadow:none;filter:none;backdrop-filter:none;-webkit-backdrop-filter:none}
 .topbar .back-button:active,.topbar .round-action:active{background:transparent;box-shadow:none;transform:none}
-.bottom-area{width:100%;box-sizing:border-box;display:flex;justify-content:center;margin:0;padding:0;background:transparent;pointer-events:none;flex:none}
-.bottom-nav{width:100%;height:76px;box-sizing:border-box;padding:8px 12px 4px;border:0;border-radius:0;background:rgba(255,253,247,.34);box-shadow:0 -2px 12px rgba(50,75,72,.012);backdrop-filter:blur(24px) saturate(1.25);-webkit-backdrop-filter:blur(24px) saturate(1.25);pointer-events:auto}
+.chat-app{--bottom-nav-height:calc(74px + env(safe-area-inset-bottom, 0px));--bottom-nav-surface:#fbfcfa}
+.chat-app.chat-list-home{--bottom-nav-surface:#fafafa}
+.chat-app:has(>.chat-content>.moments-page){--moments-surface-rgb:246 246 246;--bottom-nav-surface:rgb(var(--moments-surface-rgb))}
+.chat-app>.chat-content{padding-bottom:calc(var(--bottom-nav-height) + 16px);scroll-padding-bottom:var(--bottom-nav-height)}
+.chat-app:has(.moments-page)>.chat-content{overflow:hidden;padding-bottom:0}
+.chat-app .moments-page{padding-bottom:calc(var(--bottom-nav-height) + 8px);scroll-padding-bottom:var(--bottom-nav-height)}
+.bottom-area{position:absolute;inset:auto 0 0;z-index:4;width:100%;margin:0;padding:0;pointer-events:none}
+.bottom-nav{width:100%;height:var(--bottom-nav-height);box-sizing:border-box;padding:5px 20px calc(3px + env(safe-area-inset-bottom, 0px));border:0;border-radius:0;background:linear-gradient(to bottom,transparent,var(--bottom-nav-surface) 55%);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+.bottom-nav button{pointer-events:auto}
 .bottom-nav button{min-width:0;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;border:0;border-radius:0;color:#8a9396;background:transparent;font:inherit;font-size:11px;line-height:1.2;transition:color .2s,transform .2s}
 .bottom-nav button.selected{color:#4b6860;background:transparent;box-shadow:none}
 .bottom-nav button svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .bottom-nav button span{display:block}
 .bottom-nav button:active{transform:scale(.94)}
-@media(max-width:600px){.bottom-nav{height:76px}}
+/* 顶部轻量图标和与浅色界面协调的底部导航。 */
+.chat-list-home .chat-list-back-button,.chat-list-home .topbar .chat-list-search-action{width:44px;height:44px;border:0;border-radius:0;color:#555b5e;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+.chat-list-home .chat-list-back-button{margin-left:-10px;margin-right:4px}
+.chat-list-home .chat-list-back-button svg,.chat-list-home .chat-list-search-action svg{width:21px;height:21px;stroke-width:1.7}
+.chat-list-home .chat-list-back-button:active,.chat-list-home .topbar .chat-list-search-action:active{opacity:.55;transform:scale(.94)}
+.bottom-nav button{gap:3px;color:#a0a5a3;font-size:10px}
+.bottom-nav button.selected{color:#607a70}
+.bottom-nav button svg{width:21px;height:21px;stroke-width:1.6}
+.bottom-nav button:focus-visible,.chat-list-back-button:focus-visible,.chat-list-search-action:focus-visible{outline:2px solid #9bb4a9;outline-offset:-3px;border-radius:8px}
 
 
 @media(prefers-reduced-motion:reduce){.config-stamp-panel *{transition:none!important}}
@@ -2897,9 +3012,49 @@ function removeContact(person) {
 .friend-search-hint{width:min(100%,620px);flex:none;margin:14px auto 8px;color:#aaa9a5;font-size:10px}
 .friend-search-results{width:min(100%,620px);min-height:0;flex:1;overflow:auto;margin:0 auto}
 .friend-search-row{width:100%;min-height:70px;display:flex;align-items:center;gap:12px;padding:9px 4px;border:0;background:transparent;text-align:left;cursor:pointer}.friend-search-avatar{width:48px;height:48px;position:relative;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:50%;color:#777;background-color:#e9e7e2;background-position:center;background-size:cover;font-size:17px}.friend-search-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.friend-search-copy strong{color:#55565a;font-size:13px;font-weight:550}.friend-search-copy small{color:#aaa9a5;font-size:10px}.friend-search-arrow{color:#b8b8b5;font-size:24px}.friend-search-empty{padding:36px 8px;color:#aaa9a5;text-align:center;font-size:11px}.friend-profile-content{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:50px}.friend-profile-avatar{width:106px;height:106px;display:grid;place-items:center;overflow:hidden;border-radius:50%;color:#777;background-color:#e9e7e2;background-position:center;background-size:cover;font-size:34px}.friend-profile-content h3{margin:17px 0 5px;color:#4f5053;font-size:19px;font-weight:600}.friend-profile-content p{margin:0;color:#a4a4a4;font-size:11px}.friend-add-button{width:min(100%,300px);height:45px;margin-top:30px;border:0;border-radius:23px;color:#fff;background:#66c77f;font-size:13px;cursor:pointer}.friend-add-button:disabled{color:#92958f;background:#edeeeb}
+.friend-search-header{background:rgba(255,255,255,.88);border-bottom:0}
+.friend-search-row{min-height:76px;border-bottom:0}
+.friend-search-results{border:0}
+.friend-search-page,.friend-profile-page{padding-right:16px;padding-left:16px}
+.friend-search-input{height:44px;margin-top:14px;border:0;border-radius:16px;background:#f4f5f4;box-shadow:none}
+.friend-search-input:focus-within{border:0;box-shadow:0 0 0 2px #dfe9e2}
+.friend-search-hint{margin-top:12px;font-size:11px}
+.friend-search-row{min-height:64px;gap:10px;padding:8px 10px;border-radius:16px;background:#f8f9f8}
+.friend-search-row+.friend-search-row{margin-top:7px}
+.friend-search-avatar{width:42px;height:42px}
+.friend-search-copy{gap:3px}
+.friend-search-copy strong{font-size:13px;font-weight:600}
+.friend-search-copy small{font-size:10px}
+.friend-search-arrow{font-size:20px}
+.friend-search-empty{padding:28px 8px;font-size:11px}
+.friend-add-button{height:36px;min-width:96px;margin-top:10px;padding:0 14px;border-radius:18px;font-size:12px}
+/* 添加好友搜索与人物主页 */
+.friend-search-page,.friend-profile-page{background:#fff;color:#0f1419}
+.friend-search-header{background:rgba(255,255,255,.88);border-bottom:0}
+.friend-search-header h2{color:#0f1419;font-weight:700}
+.friend-search-input{height:48px;margin-top:18px;border-color:rgba(255,255,255,.75);background:rgba(226,230,233,.68);box-shadow:inset 0 1px 0 rgba(255,255,255,.75);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.friend-search-input input{font-size:14px;color:#0f1419}
+.friend-search-hint{margin-top:18px;color:#71767b;font-size:12px}
+.friend-search-row{min-height:76px;border-bottom:1px solid #eff3f4}
+.friend-search-copy strong{color:#0f1419;font-size:15px;font-weight:700}
+.friend-search-copy small,.friend-search-empty{color:#71767b;font-size:13px}
+.friend-profile-page{position:relative;padding-right:0;padding-left:0}
+.friend-profile-page .friend-search-header{left:0;right:0;width:100%!important;background:transparent;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
+.friend-profile-page .friend-search-header button{pointer-events:auto;color:#fff;text-shadow:0 1px 8px #0008}
+.friend-profile-page .friend-search-header h2,.friend-profile-page .friend-search-header i{visibility:hidden}
+.friend-profile-content{box-sizing:border-box;width:min(100%,660px);flex:1;display:block;margin:0 auto;padding:0;align-self:center}
+.friend-profile-cover{height:calc(216px + env(safe-area-inset-top));margin-top:calc(-1 * (56px + env(safe-area-inset-top)));padding-top:calc(56px + env(safe-area-inset-top));box-sizing:border-box;background-color:#cfd9de;background-position:center;background-size:cover}
+.friend-profile-main{padding:0 20px 24px}
+.friend-profile-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.friend-profile-avatar{width:112px;height:112px;box-sizing:border-box;flex:none;margin-top:-56px;border:4px solid #fff;background-color:#e7eaec;color:#536471}
+.friend-profile-content h3{margin:12px 0 4px;color:#0f1419;font-size:20px;font-weight:800;overflow-wrap:anywhere}
+.friend-profile-content p{color:#536471;font-size:14px;overflow-wrap:anywhere}
+.friend-add-button{width:auto;min-width:108px;height:38px;margin-top:12px;padding:0 18px;background:#0f1419;font-size:14px;font-weight:700}
+.friend-add-button:disabled{color:#536471;background:#eff3f4;cursor:default}
+.friend-search-header button:focus-visible,.friend-search-row:focus-visible,.friend-add-button:focus-visible{outline:2px solid #1d9bf0;outline-offset:2px}
 .preset-name-overlay{position:fixed;inset:0;z-index:56;display:grid;place-items:center;padding:20px;background:#20251f38;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}.preset-name-dialog{width:min(100%,340px);box-sizing:border-box;padding:23px;border:0;border-radius:24px;background:#fff;box-shadow:0 16px 48px #26352c20}.preset-name-dialog h3{display:flex;align-items:center;gap:9px;margin:0;color:#343a36;font-size:16px;font-weight:650}.preset-name-dialog h3 svg{width:20px;height:20px;fill:none;stroke:#83b896;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.preset-name-dialog p{margin:12px 0 14px;color:#838b85;font-size:12px}.preset-name-dialog input{width:100%;box-sizing:border-box;padding:12px 13px;border:1px solid #e8eee9;border-radius:13px;outline:0;color:#3f4641;background:#fafcfb;font:inherit;font-size:14px}.preset-name-dialog input:focus{border-color:#a9d0b4;box-shadow:0 0 0 3px #eaf4ed}.preset-name-dialog footer{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}.preset-name-dialog footer button{min-width:68px;padding:9px 14px;border:0;border-radius:13px;color:#68716a;background:#f1f3f1;font:inherit;font-size:12px}.preset-name-dialog footer button:last-child{color:#fff;background:#88bd98}
 .preset-detail-overlay{position:fixed;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;padding:18px;background:#29292730;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}.preset-detail-dialog{width:min(100%,460px);max-height:min(82dvh,680px);display:flex;flex-direction:column;gap:15px;padding:20px;border-radius:26px;background:#fff;box-shadow:0 16px 48px #33333318}.preset-detail-dialog header{display:flex;align-items:center;justify-content:space-between}.preset-detail-dialog h3{margin:0;color:#55565a;font-size:16px;font-weight:550}.preset-detail-dialog header button{width:30px;height:30px;border:0;border-radius:50%;color:#888;background:#f4f4f2;font-size:21px}.preset-detail-dialog label{display:flex;flex-direction:column;gap:7px;color:#8f8d8a;font-size:10px}.preset-detail-dialog input,.preset-detail-dialog textarea{width:100%;padding:11px 12px;border:0;border-radius:14px;outline:0;color:#5c5d60;background:#f7f7f5;font:inherit;font-size:12px}.preset-detail-dialog textarea{min-height:130px;resize:vertical;line-height:1.65}.preset-detail-dialog footer{display:flex;align-items:center;gap:7px}.preset-detail-dialog footer button{padding:8px 10px;border:0;border-radius:14px;color:#999a96;background:#f5f5f2;font-size:10px}.preset-detail-dialog footer .preset-remove-button{color:#c58279;background:#fff5f3}.preset-detail-dialog footer .preset-detail-done{margin-left:auto;color:#fff;background:#8bd9a0}
-.preset-delete-overlay{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:20px;background:#24282245;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}.preset-delete-dialog{width:min(100%,330px);box-sizing:border-box;padding:24px 22px 18px;border-radius:22px;background:#fff;box-shadow:0 18px 52px #2223;text-align:center}.preset-delete-icon{display:grid;place-items:center;width:46px;height:46px;margin:0 auto 13px;border-radius:16px;color:#d96f68;background:#fff0ed;font-size:23px}.preset-delete-dialog h3{margin:0;color:#393b39;font-size:16px;font-weight:650}.preset-delete-dialog p{margin:10px 0 20px;color:#858985;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.preset-delete-dialog footer{display:flex;gap:9px}.preset-delete-dialog footer button{height:40px;flex:1;border:0;border-radius:13px;color:#747975;background:#f2f3f1;font:inherit;font-size:12px}.preset-delete-dialog footer button.confirm{color:#fff;background:#df6c65;font-weight:600}.preset-delete-dialog footer button.confirm:active{background:#c9534d}
+.preset-delete-overlay{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:20px;background:#24282245;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}.preset-delete-dialog{width:min(100%,330px);box-sizing:border-box;padding:24px 22px 18px;border-radius:22px;background:#fff;box-shadow:0 18px 52px #2223;text-align:center}.preset-delete-icon{display:grid;place-items:center;width:46px;height:46px;margin:0 auto 13px;border-radius:16px;color:#d94b45;background:#fff0ed}.preset-delete-icon svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.preset-delete-dialog h3{margin:0;color:#393b39;font-size:16px;font-weight:650}.preset-delete-dialog p{margin:10px 0 20px;color:#858985;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.preset-delete-dialog footer{display:flex;gap:9px}.preset-delete-dialog footer button{height:40px;flex:1;border:0;border-radius:13px;color:#747975;background:#f2f3f1;font:inherit;font-size:12px}.preset-delete-dialog footer button.confirm{color:#fff;background:#df6c65;font-weight:600}.preset-delete-dialog footer button.confirm:active{background:#c9534d}
 .preset-config-footer{width:min(100%,620px);display:flex;gap:10px;flex:none;margin:10px auto 0;padding:8px 2px}.preset-config-footer button{height:42px;flex:1;border:0;border-radius:18px;color:#77787a;background:#f3f3f1;font-size:11px}.preset-config-footer button:last-child{color:#fff;background:#8bd9a0}
 @media(max-width:600px){.preset-config-content{padding-right:17px;padding-left:17px}}
 @media(prefers-reduced-motion:reduce){.preset-setting-toggle,.preset-setting-toggle i{transition:none}}
@@ -2924,22 +3079,68 @@ function removeContact(person) {
 @media(max-height:720px){.persona-stamp-stack{height:70dvh;min-height:460px}.persona-stamp{padding:20px}.stamp-portrait{min-height:250px}.stamp-z{font-size:clamp(140px,23vw,230px)}}
 @media(prefers-reduced-motion:reduce){.persona-stamp-stack,.persona-stamp,.persona-stamp-option,.stamp-z,.binding-navigation button{transition:none}.persona-stamp-options{animation:none}}
 @media(max-width:600px){.config-page{padding-right:16px;padding-left:16px}.config-tile-grid{gap:11px}.config-tile-grid .config-group{min-height:132px}}
-.voice-message-card{width:min(148px,100%);min-height:44px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e5e5e5;border-radius:15px;background:#efefef}.message-row.me .voice-message-card{border-color:transparent;background:linear-gradient(135deg,#833ab4,#c13584);color:#fff}.voice-play-button{width:29px;height:29px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#555;background:#fff9;cursor:pointer}.message-row.me .voice-play-button{color:#a23a9d;background:#ffffffed}.voice-play-button svg{width:15px;height:15px;fill:currentColor}.voice-play-button:disabled{opacity:.45;cursor:default}.voice-wave{height:25px;min-width:0;flex:1;display:flex;align-items:center;justify-content:space-between;gap:2px}.voice-wave i{width:2px;height:var(--bar-height);max-height:20px;border-radius:3px;background:currentColor;opacity:.35;transition:opacity .12s,transform .12s}.voice-wave.playing i{opacity:.4}.voice-wave.playing i:nth-child(-n+9){opacity:1;transform:scaleY(1.12)}.voice-wave::after{content:"";position:absolute;left:var(--voice-progress,0%);top:50%;width:2px;height:27px;border-radius:2px;background:currentColor;opacity:.9;transform:translate(-50%,-50%);pointer-events:none}.voice-wave{position:relative}.voice-transcript{max-width:300px;margin:0;padding:0 2px;color:#4b4b4d;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.message-row.me .voice-transcript{align-self:flex-end;width:fit-content;max-width:min(300px,100%);margin-right:0;margin-left:auto;text-align:right}.voice-message-layout{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:5px}.voice-message-layout.voice-message-outgoing{align-items:flex-end}.voice-message-layout.voice-message-outgoing .voice-transcript{order:2}.voice-message-layout.voice-message-outgoing .voice-message-card{order:1}.voice-transcript-expand-enter-active,.voice-transcript-expand-leave-active{transition:opacity .24s ease,transform .24s ease,max-height .28s ease;overflow:hidden}.voice-transcript-expand-enter-from,.voice-transcript-expand-leave-to{max-height:0;opacity:0;transform:translateY(-6px)}.voice-transcript-expand-enter-to,.voice-transcript-expand-leave-from{max-height:180px;opacity:1;transform:translateY(0)}.message-row.me .voice-transcript,.message-row.me .voice-impression{color:#666}.voice-description{display:block;margin-top:3px;color:#929295;font-size:11px}.voice-impression{max-width:300px;margin:0;padding:0 2px;color:#929295;font-size:10px;line-height:1.45}.composer-mic.recording{color:#e44949;background:#fff1f1}.recording-indicator{width:14px;height:14px;border-radius:4px;background:#e44949;animation:recording-pulse 1s ease-in-out infinite alternate}@keyframes recording-pulse{to{opacity:.45;transform:scale(.8)}}
+:deep(.voice-message-card){width:min(148px,100%);min-height:44px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e5e5e5;border-radius:15px;background:#efefef}.message-row.me .voice-message-card{border-color:transparent;background:linear-gradient(135deg,#833ab4,#c13584);color:#fff}.voice-play-button{width:29px;height:29px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#555;background:#fff9;cursor:pointer}.message-row.me .voice-play-button{color:#a23a9d;background:#ffffffed}.voice-play-button svg{width:15px;height:15px;fill:currentColor}.voice-play-button:disabled{opacity:.45;cursor:default}.voice-wave{height:25px;min-width:0;flex:1;display:flex;align-items:center;justify-content:space-between;gap:2px}.voice-wave i{width:2px;height:var(--bar-height);max-height:20px;border-radius:3px;background:currentColor;opacity:.35;transition:opacity .12s,transform .12s}.voice-wave.playing i{opacity:.4}.voice-wave.playing i:nth-child(-n+9){opacity:1;transform:scaleY(1.12)}.voice-wave::after{content:"";position:absolute;left:var(--voice-progress,0%);top:50%;width:2px;height:27px;border-radius:2px;background:currentColor;opacity:.9;transform:translate(-50%,-50%);pointer-events:none}.voice-wave{position:relative}.voice-transcript{max-width:300px;margin:0;padding:0 2px;color:#4b4b4d;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.message-row.me .voice-transcript{align-self:flex-end;width:fit-content;max-width:min(300px,100%);margin-right:0;margin-left:auto;text-align:right}.voice-message-layout{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:5px}.voice-message-layout.voice-message-outgoing{align-items:flex-end}.voice-message-layout.voice-message-outgoing .voice-transcript{order:2}.voice-message-layout.voice-message-outgoing .voice-message-card{order:1}.voice-transcript-expand-enter-active,.voice-transcript-expand-leave-active{transition:opacity .24s ease,transform .24s ease,max-height .28s ease;overflow:hidden}.voice-transcript-expand-enter-from,.voice-transcript-expand-leave-to{max-height:0;opacity:0;transform:translateY(-6px)}.voice-transcript-expand-enter-to,.voice-transcript-expand-leave-from{max-height:180px;opacity:1;transform:translateY(0)}.message-row.me .voice-transcript,.message-row.me .voice-impression{color:#666}.voice-description{display:block;margin-top:3px;color:#929295;font-size:11px}.voice-impression{max-width:300px;margin:0;padding:0 2px;color:#929295;font-size:10px;line-height:1.45}.composer-mic.recording{color:#e44949;background:#fff1f1}.recording-indicator{width:14px;height:14px;border-radius:4px;background:#e44949;animation:recording-pulse 1s ease-in-out infinite alternate}@keyframes recording-pulse{to{opacity:.45;transform:scale(.8)}}
 
-/* Conversation surface: neutral, editorial and focused on the messages. */
-.conversation-overlay{--conversation-bg:#fff;--conversation-line:#e3e7ed;--conversation-muted:#788291;--conversation-ink:#202630;--conversation-accent:#315f9f;--conversation-accent-soft:#e7eef8;background:#fff}
-.conversation-page{background:#fff}
+/* Conversation surface: scoped design tokens, ready for system and manual day/night modes. */
+.conversation-overlay{--conversation-bg:#eff0f2;--conversation-surface:#eff0f2;--conversation-line:#e3e4e6;--conversation-muted:#85878b;--conversation-ink:#343532;--conversation-accent:#668675;--conversation-accent-soft:#eaf1eb;--conversation-outgoing:#e8f0e8;--conversation-incoming:#fff;--conversation-composer:#eff0f2;background:var(--conversation-bg);color:var(--conversation-ink);transition:background-color .2s,color .2s}
+@media(prefers-color-scheme:dark){.conversation-overlay:not([data-conversation-theme="day"]){--conversation-bg:#191c20;--conversation-surface:#22262b;--conversation-line:#343a40;--conversation-muted:#a0a7ad;--conversation-ink:#edf0f1;--conversation-accent:#a8c8b3;--conversation-accent-soft:#2b3931;--conversation-outgoing:#304139;--conversation-incoming:#272c31;--conversation-composer:#272c31}}
+.conversation-overlay[data-conversation-theme="night"]{--conversation-bg:#191c20;--conversation-surface:#22262b;--conversation-line:#343a40;--conversation-muted:#a0a7ad;--conversation-ink:#edf0f1;--conversation-accent:#a8c8b3;--conversation-accent-soft:#2b3931;--conversation-outgoing:#304139;--conversation-incoming:#272c31;--conversation-composer:#272c31}
+.conversation-page{background:var(--conversation-bg);color:var(--conversation-ink)}
+:deep(.conversation-back){width:36px;height:36px;flex:none;color:var(--conversation-ink)}
+.conversation-header-avatar{width:42px;height:42px;position:relative;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:50%;color:var(--conversation-ink);background:var(--avatar-color);font-size:16px;font-weight:600}
+.conversation-header-avatar img{width:100%;height:100%;position:absolute;inset:0;object-fit:cover}
+.conversation-identity-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+:deep(.conversation-title){overflow:hidden;color:var(--conversation-ink);font-size:16px;font-weight:650;letter-spacing:0;text-overflow:ellipsis;white-space:nowrap}
+.conversation-subtitle{overflow:hidden;color:var(--conversation-muted);font-size:11px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+:deep(.conversation-theme-toggle){width:36px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:var(--conversation-ink);background:var(--conversation-accent-soft);cursor:pointer}
+:deep(.conversation-theme-toggle svg){width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+:deep(.conversation-status-button svg),:deep(.conversation-settings svg){width:20px;height:20px}
+:deep(.conversation-actions){flex:none}
+
 :deep(.conversation-page){position:relative!important;isolation:isolate;height:100%;min-height:0;box-sizing:border-box;padding:0!important}
-:deep(.conversation-header){position:absolute!important;top:0;left:0;right:0;z-index:5;height:106px!important;min-height:106px!important;flex:none!important;padding-bottom:10px!important;background:rgba(255,255,255,.56)!important;backdrop-filter:blur(22px) saturate(1.5)!important;-webkit-backdrop-filter:blur(22px) saturate(1.5)!important;border-bottom:1px solid #ffffff70!important}
-:deep(.message-list){position:relative;z-index:0;box-sizing:border-box;padding-top:128px!important}
-@media(max-width:600px){:deep(.conversation-header){height:106px!important;min-height:106px!important;flex:none!important;padding-bottom:10px!important}:deep(.message-list){padding-top:128px!important}}
+:deep(.conversation-header){position:absolute!important;top:0;left:0;right:0;z-index:5;height:calc(44px + env(safe-area-inset-top))!important;min-height:calc(44px + env(safe-area-inset-top))!important;flex:none!important;align-items:center!important;justify-content:flex-start!important;gap:5px!important;padding:env(safe-area-inset-top) 8px 0!important;background:rgba(238,239,241,.88)!important;backdrop-filter:blur(20px) saturate(1.15)!important;-webkit-backdrop-filter:blur(20px) saturate(1.15)!important;border:0!important;box-shadow:none!important}
+:deep(.conversation-header-avatar){display:none!important}
+:deep(.conversation-back){width:30px;height:36px;flex:none;border-radius:0}
+:deep(.conversation-back svg){width:26px;height:26px;stroke-width:2}
+:deep(.conversation-identity-copy){min-width:0;flex:1;display:flex;flex-direction:column;align-self:center;gap:1px}
+:deep(.conversation-title){overflow:hidden;margin:0;color:#191a1c;font-size:17px;font-weight:650;line-height:1.15;text-overflow:ellipsis;white-space:nowrap}
+:deep(.conversation-subtitle){display:flex;align-items:center;gap:4px;overflow:hidden;color:#77797d;font-size:10px;font-weight:450;line-height:1.2;white-space:nowrap}
+:deep(.conversation-online-dot){width:8px;height:8px;flex:none;border-radius:50%;background:#22c978}
+:deep(.conversation-subtitle-separator){color:#a3a4a8}
+:deep(.conversation-subtitle-emoji){font-size:10px}
+:deep(.conversation-chevron){margin-left:0;color:#696b70;font-size:18px;line-height:10px}
+:deep(.conversation-theme-toggle){display:none!important}
+:deep(.conversation-status-button){width:36px;height:36px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#191a1c;background:transparent}
+:deep(.conversation-status-button svg){width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+:deep(.conversation-actions){flex:none;margin-left:0;display:flex;align-items:center;justify-content:center;min-width:38px;position:relative;z-index:7}
+:deep(.conversation-settings){width:38px!important;height:38px!important;flex:none!important;display:grid!important;place-items:center!important;padding:0!important;border:0!important;border-radius:0!important;color:#17181a!important;background:transparent!important;opacity:1!important;visibility:visible!important;position:relative;z-index:8}
+:deep(.conversation-settings svg){display:block!important;width:24px!important;height:24px!important;fill:none!important;stroke:currentColor!important;stroke-width:2.2!important;stroke-linecap:round!important}
+:deep(.conversation-actions){flex:none!important;margin-left:auto!important;display:flex!important;align-items:center!important;justify-content:center!important;min-width:38px!important;position:relative!important;z-index:20!important}
+:deep(.conversation-header){overflow:visible!important}
+:deep(.conversation-header > .conversation-actions){order:10!important}
+:deep(.message-row){margin-bottom:16px!important}
+:deep(.message-row:not(.has-tail)){margin-bottom:16px!important}
+:deep(.message-list .message-row.has-tail){margin-bottom:20px!important}
+@media(max-width:600px){:deep(.message-row){margin-bottom:16px!important}:deep(.message-row:not(.has-tail)){margin-bottom:16px!important}:deep(.message-list .message-row.has-tail){margin-bottom:20px!important}}
+:deep(.thought-preview-toggle){min-width:25px!important;min-height:25px!important;width:25px!important;padding:0!important;display:grid!important;place-items:center!important;font-size:17px!important}
+:deep(.thought-preview-toggle span){font-size:17px!important;line-height:1!important}
+:deep(.conversation-header){border-bottom:0!important;box-shadow:none!important}
+:deep(.conversation-header)::after{display:none!important;content:none!important}
+:deep(.conversation-header){background:rgba(239,240,242,.86)!important}
+:deep(.conversation-page){background:#eff0f2!important}
+:deep(.message-list){background:#eff0f2;padding-bottom:18px!important}
+:deep(.message-row.them .message-bubble),:deep(.message-row.me .message-bubble){border-radius:10px!important}
+:deep(.composer){position:relative;z-index:4;box-sizing:border-box;width:100%;margin-top:-1px;padding:8px 11px calc(8px + env(safe-area-inset-bottom))!important;border-top:1px solid rgba(255,255,255,.42)!important;background:rgba(255,255,255,.58)!important;backdrop-filter:blur(22px) saturate(1.35)!important;-webkit-backdrop-filter:blur(22px) saturate(1.35)!important;box-shadow:0 -8px 24px rgba(35,42,48,.06)!important}
+:deep(.message-row .tiny-avatar),:deep(.typing-row .tiny-avatar){box-shadow:none!important;filter:none!important}
+@media(max-width:600px){:deep(.conversation-settings){width:36px!important;height:36px!important}}
+@media(max-width:600px){:deep(.conversation-header){height:calc(42px + env(safe-area-inset-top))!important;min-height:calc(42px + env(safe-area-inset-top))!important;padding:env(safe-area-inset-top) 6px 0!important;gap:4px!important}:deep(.conversation-title){font-size:16px}:deep(.conversation-status-button){width:32px;height:34px}:deep(.conversation-settings){width:30px;height:34px}}
+:deep(.message-list){position:relative;z-index:0;box-sizing:border-box;padding-top:calc(44px + env(safe-area-inset-top))!important}
+@media(max-width:600px){:deep(.message-list){padding-top:calc(42px + env(safe-area-inset-top))!important}}
 :deep(.conversation-avatar){border:1px solid rgba(20,30,45,.08)}
-:deep(.conversation-title){color:var(--conversation-ink);font-size:15px;font-weight:650;letter-spacing:-.01em}
 :deep(.message-list){padding:22px 20px 28px;scrollbar-width:thin;scrollbar-color:#cbd0d8 transparent}
 :deep(.message-row){gap:8px;margin-bottom:4px}
 :deep(.message-row:not(.has-tail)){margin-bottom:4px}
-:deep(.message-row.has-tail){margin-bottom:20px!important}
-:deep(.message-row.me .message-timestamp),:deep(.message-row.them .message-timestamp){display:none!important}
 :deep(.message-row.me .message-content-stack){align-items:flex-end}
 :deep(.message-row.me .message-content-stack > .message-bubble-wrap:has(.transfer-card)),:deep(.message-row.me .message-content-stack > .message-bubble-wrap:has(.text-image-card)){width:auto;max-width:100%;align-self:flex-end;margin-left:auto;justify-content:flex-end}
 :deep(.message-row.me .transfer-card){width:248px;max-width:100%;box-sizing:border-box;flex:none}
@@ -2965,26 +3166,8 @@ function removeContact(person) {
 :deep(.text-image-dialog footer .feature-send-button:not(:disabled):active),:deep(.transfer-compose-dialog footer .feature-send-button:not(:disabled):active){background:#1e8054}
 
 :deep(.message-row.them:not(.has-tail) .tiny-avatar){visibility:visible}
-:deep(.message-row.them.has-tail),:deep(.message-row.me.has-tail){margin-bottom:20px!important}
-:deep(.message-row.them:not(.has-tail)),:deep(.message-row.me:not(.has-tail)){margin-bottom:16px!important}
-:deep(.message-row.has-tail){margin-bottom:20px!important}
-:deep(.message-content-stack){gap:7px;max-width:calc(100% - 48px)}
-:deep(.message-row.them .message-bubble),:deep(.message-row.me .message-bubble){width:max-content;display:block;max-width:min(76%,390px);padding:12px 15px;border:1px solid transparent;border-radius:18px;font-size:15px;font-weight:400;line-height:1.58;letter-spacing:.005em;box-shadow:none}
-:deep(.message-row.them .message-bubble){color:#29313c;background:#fff;border-color:var(--conversation-line);border-bottom-left-radius:7px}
-:deep(.message-row.me .message-bubble){color:#315bb5;background:#edf3ff;border:0;border-radius:30px;font-weight:400;box-shadow:none}
 @media(max-width:600px){:deep(.message-row.me .transfer-card){width:220px}}
-:deep(.message-row.them .message-timestamp){display:block;align-self:flex-start;margin:0;padding:0 12px;color:#8e8e93;text-align:left;font-size:11px;font-weight:400;line-height:1.4}
-:deep(.message-row.me time){display:block}
-:deep(.message-row.me .message-bubble:after){display:none}
-:deep(.chat-time-divider){width:100%;margin:13px 0 15px;color:#8e8e93;text-align:center;font-size:11px;font-weight:400;line-height:1.4}
-:deep(.chat-time-divider:before),:deep(.chat-time-divider:after){display:none}
-
 :deep(.message-row.them .message-bubble:after),:deep(.message-row.me .message-bubble:after){display:none;content:none}
-:deep(.chat-time-divider){display:block;width:100%;flex:0 0 100%;align-self:stretch;margin:21px 0;color:#8e8e93;text-align:center;font-size:11px;font-variant-numeric:tabular-nums;line-height:1.4}
-:deep(.chat-time-divider:before),:deep(.chat-time-divider:after){display:none}
-:deep(.message-row time){color:var(--conversation-muted);font-size:10px}
-:deep(.message-row.them .message-bubble){color:#4b4f55;background:#fff;border:0;border-radius:12px;font-weight:400;box-shadow:0 2px 7px rgba(38,42,48,.04),0 1px 2px rgba(38,42,48,.025)}
-:deep(.message-row.me .message-bubble){border-radius:12px}
 .thought-summary-backdrop{position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-end;justify-content:center;padding:0 12px calc(12px + env(safe-area-inset-bottom));box-sizing:border-box;background:rgba(28,29,33,.28);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 .thought-summary-sheet{box-sizing:border-box;display:flex;flex-direction:column;width:min(100%,520px);min-height:0;max-height:80vh;max-height:80dvh;overflow:hidden;padding:12px 26px 30px;border:1px solid #ffffffc9;border-radius:25px;background:#fdfcfb;color:#303036;box-shadow:0 16px 64px #20202c26,0 2px 8px #20202c0a;animation:thought-sheet-in .24s ease-out}
 .thought-summary-handle{flex:none;align-self:center;width:30px;height:3px;margin:0 0 23px;border-radius:3px;background:#dedbd8}
@@ -3051,7 +3234,6 @@ function removeContact(person) {
 :deep(.chat-setting-quality-option i){color:#5278bd;font-style:normal}
 :deep(.chat-setting-quality-option.is-selected){border-color:#9bb4db;background:#f3f7fd}
 
-:deep(.composer-field){box-sizing:border-box;min-height:46px;align-self:center;padding:5px 7px 5px 16px;border:1px solid #ffffffd9;border-radius:25px;background:#ffffffd9;box-shadow:0 4px 18px #25252512,0 1px 4px #2525250a;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
 :deep(.send-button){width:38px;height:38px;border-radius:50%;align-self:center;color:#fff;background:#96999c;transition:background .16s,transform .16s}
 :deep(.send-button:hover){background:#7f8386}
 :deep(.send-button:active){transform:scale(.95)}
@@ -3068,7 +3250,7 @@ function removeContact(person) {
 :deep(.text-image-card){border-radius:12px;box-shadow:0 4px 14px rgba(25,35,50,.1)}
 @media(max-width:600px){
   :deep(.message-list){padding:16px 12px 22px}
-  :deep(.message-row.them .message-bubble),:deep(.message-row.me .message-bubble){max-width:min(82%,360px);padding:10px 13px;font-size:14px}
+  :deep(.message-row.them .message-bubble),:deep(.message-row.me .message-bubble){max-width:min(82%,360px);padding:10px 13px;font-size:14px;font-weight:400}
   :deep(.composer){min-height:0;padding:5px 10px calc(5px + env(safe-area-inset-bottom, 0px))}
   :deep(.composer-input-row){min-height:48px;gap:7px}
   :deep(.composer-with-quote .composer-input-row){min-height:48px}
@@ -3076,7 +3258,72 @@ function removeContact(person) {
   :deep(.composer-field){min-height:42px}
   :deep(.send-button){width:36px;height:36px}
 }
-:deep(.message-translation){align-self:flex-start;margin:2px 0 0 2px;color:#fff;font-size:14px;font-weight:500;line-height:1.5;-webkit-text-stroke:1px #000;paint-order:stroke fill;text-shadow:1px 0 #000,-1px 0 #000,0 1px #000,0 -1px #000,1px 1px #000,-1px -1px #000,1px -1px #000,-1px 1px #000;white-space:pre-wrap;overflow-wrap:anywhere}
+/* 第四步：统一输入栏视觉，保留附件、图片、语音、发送和手动接收入口。 */
+:deep(.composer){background:var(--conversation-bg)!important;color:var(--conversation-ink);transition:background-color .2s}
+:deep(.composer-field){border:1px solid var(--conversation-line)!important;border-radius:22px!important;background:var(--conversation-composer)!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+:deep(.composer textarea){color:var(--conversation-ink)}
+:deep(.composer textarea::placeholder){color:var(--conversation-muted)}
+:deep(.composer-tool),:deep(.receive-button){color:var(--conversation-ink)!important;background:transparent!important}
+:deep(.composer-tool:active),:deep(.receive-button:active){color:var(--conversation-accent)!important}
+:deep(.send-button){color:#fff!important;background:var(--conversation-accent)!important;box-shadow:none!important}
+:deep(.send-button:disabled){opacity:.45}
+:deep(.quote-compose-preview){border-left-color:var(--conversation-accent)!important;background:var(--conversation-surface)!important;color:var(--conversation-ink)}
+:deep(.quote-compose-preview strong),:deep(.quote-compose-preview>span>span){color:var(--conversation-muted)!important}
+:deep(.quote-compose-preview button){color:var(--conversation-ink)!important;background:var(--conversation-line)!important}
+.conversation-overlay[data-conversation-theme="night"] :deep(.composer-mic.recording){color:#ff7777!important;background:#492d31!important}
+@media(prefers-color-scheme:dark){.conversation-overlay:not([data-conversation-theme="day"]) :deep(.composer-mic.recording){color:#ff8a8a!important;background:#492d31!important}}
+
+:deep(.composer){height:auto!important;min-height:116px!important;flex:none!important;display:flex!important;align-items:stretch!important;margin:0!important;padding:8px 28px max(8px,env(safe-area-inset-bottom))!important;border:0!important;border-radius:0!important;background:rgba(247,247,248,.82)!important;backdrop-filter:blur(22px) saturate(1.2)!important;-webkit-backdrop-filter:blur(22px) saturate(1.2)!important;box-shadow:none!important}
+:deep(.conversation-page){position:relative!important}
+:deep(.message-list){position:relative!important;z-index:0!important;flex:1 1 auto!important;min-height:0!important;box-sizing:border-box!important;padding-bottom:18px!important;background:transparent!important}
+:deep(.composer-input-row){width:min(100%,620px)!important;max-width:620px!important;min-height:0!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:5px!important;margin:0 auto!important}
+:deep(.composer-entry-row){height:42px!important;min-height:42px!important;flex:none!important;display:flex!important;align-items:center!important;padding:0 14px!important;border:0!important;border-radius:13px!important;background:#fff!important}
+:deep(.composer-entry-row textarea){width:100%!important;min-width:0!important;min-height:30px!important;max-height:34px!important;resize:none!important;overflow:auto!important;margin:0!important;padding:5px 0!important;border:0!important;outline:0!important;color:#17181a!important;background:transparent!important;font:inherit!important;font-size:15px!important;line-height:1.4!important}
+:deep(.composer-toolbar){height:44px!important;min-height:44px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:0!important;padding:0 8px!important}
+:deep(.composer-toolbar .composer-tool){width:40px!important;height:42px!important;flex:none!important;display:grid!important;place-items:center!important;padding:0!important;border:0!important;border-radius:50%!important;color:#252629!important;background:transparent!important;box-shadow:none!important;cursor:pointer!important}
+:deep(.composer-toolbar .composer-tool svg){width:27px!important;height:27px!important;fill:none!important;stroke:currentColor!important;stroke-width:1.8!important;stroke-linecap:round!important;stroke-linejoin:round!important}
+:deep(.composer-toolbar .composer-send svg){width:27px!important;height:27px!important;stroke-width:1.8!important}
+:deep(.composer-toolbar .composer-tool:disabled){opacity:1!important;color:#252629!important;cursor:default!important}
+:deep(.composer-toolbar .composer-tool:active){background:#e9e9eb!important}
+:deep(.composer-toolbar .composer-tool.recording){color:#e44949!important;background:#fff1f1!important}
+:deep(.composer-toolbar .composer-receive:disabled){opacity:.45!important}
+:deep(.composer-toolbar .composer-loading){display:flex!important;gap:4px}
+:deep(.composer-loading i){width:5px;height:5px;border-radius:50%;background:#686a6e;animation:typing-bounce .9s ease-in-out infinite}
+:deep(.composer-loading i:nth-child(2)){animation-delay:.14s}:deep(.composer-loading i:nth-child(3)){animation-delay:.28s}
+:deep(.quote-compose-preview){margin-bottom:0!important}
+@media(max-width:600px){:deep(.composer){min-height:114px!important;padding:7px 28px max(7px,env(safe-area-inset-bottom))!important}:deep(.composer-input-row){gap:4px!important}:deep(.composer-entry-row){height:40px!important;min-height:40px!important}:deep(.composer-toolbar){height:42px!important;min-height:42px!important;padding:0!important}:deep(.composer-toolbar .composer-tool){width:38px!important;height:40px!important}:deep(.composer-toolbar .composer-tool svg){width:25px!important;height:25px!important}}
+:deep(.composer){position:relative;z-index:2}
+:deep(.composer-field:focus-within){border-color:var(--conversation-accent)!important;box-shadow:0 0 0 3px var(--conversation-accent-soft)!important}
+:deep(.composer textarea:focus-visible){outline:none}
+:deep(.composer-add){border-radius:50%;transition:color .16s,background .16s}
+:deep(.composer-add:active){color:var(--conversation-accent)!important;background:var(--conversation-accent-soft)!important}
+
+:deep(.message-list){background:var(--conversation-bg);scrollbar-color:var(--conversation-line) transparent}
+:deep(.message-row.them .tiny-avatar),:deep(.message-row.me .tiny-avatar){box-shadow:0 1px 4px rgba(25,30,35,.08)}
+:deep(.message-row.them .message-bubble){color:#17181a!important;background:#fff!important;border:0!important;border-radius:12px!important;box-shadow:none!important;font-weight:400}
+:deep(.message-row.me .message-bubble){color:#fff!important;background:#0099ff!important;border:0!important;border-radius:12px!important;box-shadow:none!important;font-weight:400}
+:deep(.message-row.them .message-bubble:after),:deep(.message-row.me .message-bubble:after){display:none!important;content:none!important}
+:deep(.message-row.message-selected .message-bubble){box-shadow:none!important}
+:deep(.chat-time-divider){font-weight:400!important}
+:deep(.message-row.them .typing-bubble){display:none!important}
+:deep(.message-row.them .message-bubble:after),:deep(.message-row.me .message-bubble:after){display:none!important;content:none!important}
+:deep(.message-row.message-selected .message-bubble){box-shadow:none!important}
+:deep(.message-row.them .message-bubble-wrap),:deep(.message-row.me .message-bubble-wrap){filter:none!important}
+:deep(.message-row .message-bubble){width:fit-content!important;max-width:min(70vw,320px)!important;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;box-sizing:border-box}
+:deep(.message-row.me .message-content-stack){width:auto!important;max-width:calc(100% - 52px)!important;min-width:0;flex:0 1 auto!important}
+:deep(.message-row.me .message-bubble-wrap){width:auto!important;max-width:100%!important;align-self:flex-end!important;justify-content:flex-end!important}
+@media(max-width:600px){:deep(.message-row .message-bubble){max-width:min(68vw,280px)!important}}
+:deep(.quoted-message){color:var(--conversation-muted);border-color:var(--conversation-line)}
+:deep(.quoted-message strong),:deep(.quoted-message>span){color:var(--conversation-muted)}
+:deep(.message-reaction){border-color:var(--conversation-surface);background:var(--conversation-surface)}
+:deep(.message-row.them .voice-message-card){color:var(--conversation-ink);background:var(--conversation-incoming);border:1px solid var(--conversation-line);box-shadow:none}
+:deep(.message-row.me .voice-message-card){color:var(--conversation-ink);background:var(--conversation-outgoing);border:1px solid transparent}
+:deep(.message-row.them .voice-message-card .voice-play-button),:deep(.message-row.me .voice-message-card .voice-play-button){color:var(--conversation-accent);background:var(--conversation-surface)}
+:deep(.message-row.them .voice-wave),:deep(.message-row.me .voice-wave){color:var(--conversation-ink)}
+:deep(.message-row .voice-transcript),:deep(.message-row .voice-impression){color:var(--conversation-muted)}
+:deep(.message-row.message-selected .message-bubble){box-shadow:0 0 0 2px var(--conversation-accent)!important}
+.conversation-overlay[data-conversation-theme="night"] :deep(.character-status-card),.conversation-overlay[data-conversation-theme="night"] :deep(.thought-preview){color:var(--conversation-ink);background:var(--conversation-surface);border-color:var(--conversation-line)}
+.conversation-overlay[data-conversation-theme="night"] :deep(.thought-preview-toggle),.conversation-overlay[data-conversation-theme="night"] :deep(.thought-preview p),.conversation-overlay[data-conversation-theme="night"] :deep(.status-card-heading),.conversation-overlay[data-conversation-theme="night"] :deep(.status-metric){color:var(--conversation-muted)}
 :deep(.chat-setting-icon.translation-icon){color:#3c82a8!important;background:#eaf3f8!important}
 </style>
 <style scoped src="@/styles/chat-settings-refined.css"></style>

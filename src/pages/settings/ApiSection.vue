@@ -110,6 +110,11 @@ function handleSaveCurrentModel() {
 
 <template>
     <div class="tab-page api-settings-page">
+    <div class="api-page-intro">
+      <RetroSticker kind="network" />
+      <div><h2>连接与模型设置</h2><p>管理服务预设、接口地址与模型</p></div>
+      <span class="api-intro-mark" aria-hidden="true">JY / NET</span>
+    </div>
     <!-- 预设方案管理 -->
     <div class="k-card">
       <div class="card-head">
@@ -124,8 +129,8 @@ function handleSaveCurrentModel() {
       </div>
 
         <div class="preset-picker-row">
-          <label class="preset-picker-label">当前预设</label>
-          <select class="preset-picker" :value="currentPreset.id" @change="selectPreset($event.target.value)">
+          <label class="preset-picker-label" for="api-preset-picker">当前预设</label>
+          <select id="api-preset-picker" class="preset-picker" :value="currentPreset.id" @change="selectPreset($event.target.value)">
             <option v-for="p in apiSettings.presets" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
           <button v-if="apiSettings.presets.length > 1" class="preset-remove" type="button" aria-label="删除当前预设" @click="handleDeletePreset(currentPreset.id)">移除</button>

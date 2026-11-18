@@ -1,7 +1,11 @@
 .chat-settings-page{height:100%;height:100dvh;background:#f7f6f4;color:#45414a}
 .chat-settings-header{width:100%;height:auto;min-height:calc(58px + env(safe-area-inset-top));align-items:center;padding:env(safe-area-inset-top) max(16px,calc((100vw - 580px)/2)) 0;grid-template-columns:40px 1fr 40px;background:#f7f6f4ed;border-bottom:1px solid #ebe8e580;box-sizing:border-box}
 .chat-settings-header>button,.chat-settings-header>div,.chat-settings-header>i{transform:none}
-.chat-settings-header>button{height:38px;width:38px;border-radius:50%;background:#eeece9;color:#726b73;font-size:26px;padding:0 0 3px}.chat-settings-header h2{font-size:14px;font-weight:500;letter-spacing:.04em;color:#514b54}
+.chat-settings-header>button{height:38px;width:38px;border-radius:50%;background:transparent;color:#726b73;font-size:26px;padding:0 0 3px;box-shadow:none}.chat-settings-header h2{font-size:14px;font-weight:500;letter-spacing:.04em;color:#514b54}
+.chat-settings-eyebrow,.chat-settings-group-title>span{display:none}
+.chat-settings-page .toggle-switch.on{background:#008f83!important}
+.chat-settings-page .toggle-switch:not(.on){background:#d6e8e5!important}
+
 .chat-settings-scroll{box-sizing:border-box;width:min(100%,600px);margin:0 auto;padding:24px 20px calc(32px + env(safe-area-inset-bottom));scrollbar-width:thin;scrollbar-color:#ded8db transparent}
 .chat-settings-intro{display:flex;align-items:center;gap:16px;padding:3px 5px 28px}.chat-settings-person{display:grid;place-items:center;flex:none;width:56px;height:56px;padding:3px;box-sizing:border-box;border:1px solid #e3dddf;border-radius:20px;background:#fff;color:#a594a4;font-size:22px;box-shadow:0 4px 12px #77657008}.chat-settings-person img{width:100%;height:100%;object-fit:cover;border-radius:15px}.chat-settings-intro>div:last-child{min-width:0}.chat-settings-eyebrow{font-size:8px;letter-spacing:.11em;color:#a39a9f}.chat-settings-intro h3{margin:7px 0 5px;font-size:20px;font-weight:500;line-height:1.4;color:#48414a;overflow-wrap:anywhere}.chat-settings-intro p{margin:0;color:#a0979e;font-size:11px;line-height:1.6}
 .chat-settings-group-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 5px 10px}.chat-settings-group-title h3{margin:0;font-size:11px;font-weight:500;letter-spacing:.07em;color:#8b8089}.chat-settings-group-title>span{font-size:8px;letter-spacing:.13em;color:#b4aab0}

@@ -86,7 +86,7 @@ function selectSound(kind, event) {
         </div>
       </section>
 
-      <div class="account-section">
+      <div class="account-section first-account-section">
         <h2>让聊天更合心意</h2>
         <div class="entry-group">
           <button :ref="el => entryButtons.chat = el" class="account-entry" type="button" @click="openPage('chat')">
@@ -162,7 +162,7 @@ function selectSound(kind, event) {
 .account button:disabled{cursor:default;opacity:.45}
 .account svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .account button:focus-visible,.account input:focus-visible,.account textarea:focus-visible,.upload-sound:focus-within{outline:2px solid var(--account-accent);outline-offset:4px}
-.identity-card{display:flex;align-items:center;gap:18px;margin:12px 0 31px;padding:21px 19px;border:1px solid #e7ece9;border-radius:22px;background:linear-gradient(145deg,#ffffffed,#f5f8f6e8);box-shadow:0 10px 28px #30483e0b}
+.identity-card{display:flex;align-items:center;gap:18px;margin:12px 0 72px!important;padding:21px 19px;border:1px solid #e7ece9;border-radius:22px;background:linear-gradient(145deg,#ffffffed,#f5f8f6e8);box-shadow:0 10px 28px #30483e0b}
 .identity-avatar{display:grid;place-items:center;width:78px;height:78px;flex:none;padding:0;border:0;border-radius:50%;overflow:hidden;background:#e8eeeb;color:#91aaa0;box-shadow:0 0 0 4px #fff,0 3px 12px #43594c16}
 .identity-avatar img{width:100%;height:100%;object-fit:cover}
 .identity-avatar svg{width:100%;height:100%;fill:currentColor;stroke:none}
@@ -172,6 +172,7 @@ function selectSound(kind, event) {
 .identity-copy p.empty-bio{color:#727a7e}
 .edit-link{display:inline-flex;align-items:center;gap:4px;min-height:44px;margin-left:-2px;padding:0 2px;border:0;color:var(--account-accent);background:transparent;font-size:13px!important;font-weight:550!important}
 .edit-link svg{width:16px;height:16px}
+.first-account-section{margin-top:20px}
 .account-section h2{margin:0 0 12px 2px;color:var(--account-muted);font-size:12px;font-weight:500;letter-spacing:.04em}
 .entry-group{overflow:hidden;border:1px solid #e9edeb;border-radius:17px;background:#fff}
 .account-entry{position:relative;display:flex;align-items:center;width:100%;gap:14px;min-height:86px;padding:17px 18px;border:0;background:transparent;text-align:left;color:inherit;transition:background .16s}
