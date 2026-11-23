@@ -199,6 +199,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
+/* 白色主配色，强调色 iOS 绿 #34c759 */
 .mask {
   position: fixed;
   inset: 0;
@@ -206,23 +207,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(70, 74, 68, 0.14);
-  backdrop-filter: blur(10px) saturate(1.1);
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  background: rgba(0, 0, 0, 0.24);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   animation: fade 0.2s ease;
 }
 .sheet {
   width: 100%;
   max-width: 420px;
-  margin: 0 12px 16px;
-  padding: 22px 20px 18px;
-  border: 0;
+  margin: 0 10px 12px;
+  padding: 20px 18px 16px;
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 16px 42px rgba(45, 55, 46, 0.12), inset 0 1px 0 rgba(255,255,255,.9);
-  backdrop-filter: blur(24px) saturate(1.2);
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  color: #575b56;
+  background: #ffffff;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+  color: #1c1c1e;
   animation: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (min-height: 640px) {
@@ -233,56 +231,56 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 16px;
+  gap: 2px;
+  margin-bottom: 14px;
+  text-align: center;
 }
 .eyebrow {
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  color: #b5aca3;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #8e8e93;
 }
 .head h2 {
-  font-size: 18px;
-  font-weight: 500;
-  color: #4a4541;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1c1c1e;
 }
 .close {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 32px;
-  height: 32px;
+  top: 0;
+  right: 0;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 50%;
-  background: #f1eee9;
+  background: #f2f2f7;
   display: grid;
   place-items: center;
   cursor: pointer;
 }
 .close svg {
-  width: 14px;
-  stroke: #8f877f;
-  stroke-width: 1.8;
+  width: 13px;
+  stroke: #8e8e93;
+  stroke-width: 2.2;
   stroke-linecap: round;
 }
 
-/* 预览 */
+/* 预览：白底圆角卡片，不再使用拍立得样式 */
 .preview-card {
-  width: 58%;
-  margin: 0 auto 18px;
+  width: 62%;
+  margin: 4px auto 16px;
   padding: 8px 8px 0;
-  background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 6px 16px rgba(80, 70, 60, 0.08);
-  rotate: -2deg;
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
-.preview-date{padding:28px 8px;text-align:center;color:#6f6861;font-size:14px}
-.preview-text{padding:18px 10px;min-height:86px;display:grid;place-items:center;text-align:center;overflow-wrap:anywhere;color:#6f6861;font-size:14px;line-height:1.5}
+.preview-date { padding: 26px 8px; text-align: center; color: #1c1c1e; font-size: 15px; }
+.preview-text { padding: 18px 10px; min-height: 86px; display: grid; place-items: center; text-align: center; overflow-wrap: anywhere; color: #1c1c1e; font-size: 15px; line-height: 1.5; }
 .preview-photo {
   aspect-ratio: 1;
-  border-radius: 3px;
+  border-radius: 12px;
   overflow: hidden;
-  background: linear-gradient(160deg, #eeebe6, #e2ddd6);
+  background: #f2f2f7;
   display: grid;
   place-items: center;
 }
@@ -292,41 +290,42 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   object-fit: cover;
 }
 .hint {
-  font-size: 12px;
-  color: #aaa198;
+  font-size: 13px;
+  color: #8e8e93;
 }
 .preview-caption {
   display: block;
   padding: 8px 0 10px;
   text-align: center;
   font-size: 12px;
-  color: #8f877f;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
+  color: #8e8e93;
 }
 
-/* 切换 */
+/* 相册 / 图片链接 切换：iOS 分段控件 */
 .tabs {
   display: flex;
-  padding: 4px;
-  margin-bottom: 14px;
-  border-radius: 999px;
-  background: #f1eee9;
+  padding: 3px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: #f2f2f7;
 }
 .tabs button {
   flex: 1;
   border: none;
   background: transparent;
-  padding: 8px 0;
-  border-radius: 999px;
-  font-size: 13px;
-  color: #9a918a;
+  padding: 7px 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1c1c1e;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
 .tabs button.on {
-  background: #fff;
-  color: #4a4541;
-  box-shadow: 0 2px 6px rgba(80, 70, 60, 0.08);
+  background: #ffffff;
+  color: #1c1c1e;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .pane {
@@ -334,49 +333,49 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .pick {
   width: 100%;
-  height: 52px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   border: 0;
-  border-radius: 18px;
-  background: linear-gradient(145deg, #ffffff, #f7faf7);
-  box-shadow: 0 5px 14px rgba(54, 72, 57, 0.07), inset 0 1px 0 #fff;
-  color: #5c665d;
-  font-size: 14px;
+  border-radius: 14px;
+  background: #34c759;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform .18s, box-shadow .18s;
+  transition: opacity 0.18s;
 }
-.pick:active { transform: scale(.985); box-shadow: 0 2px 7px rgba(54,72,57,.06); }
+.pick:active { opacity: 0.7; }
 .pick svg {
   width: 18px;
   fill: none;
-  stroke: #829888;
-  stroke-width: 1.5;
+  stroke: #ffffff;
+  stroke-width: 1.8;
   stroke-linejoin: round;
+  stroke-linecap: round;
 }
 .field input {
   width: 100%;
-  height: 48px;
-  padding: 0 16px;
-  border: 1px solid #e8e3dc;
-  border-radius: 16px;
-  background: #fff;
-  color: #4a4541;
-  font-size: 14px;
+  height: 46px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #f2f2f7;
+  color: #1c1c1e;
+  font-size: 16px;
   outline: none;
-  transition: border-color 0.2s;
 }
 .field textarea {
   width: 100%;
   min-height: 92px;
-  padding: 12px 16px;
+  padding: 12px 14px;
   resize: vertical;
-  border: 1px solid #e8e3dc;
-  border-radius: 16px;
-  background: #fff;
-  color: #4a4541;
+  border: 0;
+  border-radius: 12px;
+  background: #f2f2f7;
+  color: #1c1c1e;
   font: inherit;
   font-size: 16px;
   line-height: 1.45;
@@ -385,23 +384,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   user-select: text;
 }
 .field input::placeholder, .field textarea::placeholder {
-  color: #c2bab1;
+  color: #aeaeb2;
 }
 .field input:focus, .field textarea:focus {
-  border-color: #c9bfb3;
+  box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.25);
 }
 
 .error {
   margin-top: 10px;
-  font-size: 12px;
-  color: #b08b80;
+  font-size: 13px;
+  color: #ff3b30;
 }
 
 .actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 .spacer {
   flex: 1;
@@ -410,30 +409,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 40px;
   padding: 0 18px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 15px;
   cursor: pointer;
 }
 .ghost {
   border: none;
   background: transparent;
-  color: #9a918a;
+  color: #34c759;
 }
 .primary {
   border: none;
-  background: #8bd9a0;
-  color: #fff;
-  box-shadow: none;
+  background: #34c759;
+  color: #ffffff;
+  font-weight: 600;
 }
 .primary:disabled {
-  background: #dfe9e1;
-  color: #a2b2a4;
-  box-shadow: none;
+  background: #f2f2f7;
+  color: #aeaeb2;
   cursor: not-allowed;
 }
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #c9bfb3;
+  outline: 2px solid rgba(52, 199, 89, 0.5);
   outline-offset: 2px;
 }
 

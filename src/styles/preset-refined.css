@@ -71,3 +71,42 @@
 .preset-injection-fields{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,.85fr);gap:8px}
 .preset-injection-fields label{min-width:0}
 .preset-injection-fields input:disabled{opacity:.55}
+
+/* 预设配置页统一主题：白色主色，iOS 绿为按钮副色，去除线框与紫色。 */
+.preset-config-page,.preset-config-content,.preset-config-scroll{background:#fff!important;color:#1c1c1e!important}
+.preset-config-header{background:rgba(255,255,255,.92)!important;border-bottom:0!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.preset-config-header h2{color:#1c1c1e!important}
+.preset-config-header small,.preset-config-section-title small,.preset-name-copy small,.preset-entry-copy small,.preset-detail-meta{color:#8e8e93!important}
+.preset-config-section-title{color:#1c1c1e!important;font-weight:600!important}
+.preset-config-section-title>button,.preset-config-section-title button{border:0!important;background:#e8f8ee!important;color:#34c759!important}
+.preset-name-card,.preset-setting-card,.preset-parameters-group,.preset-current-name{border:0!important;border-radius:0!important;background:#fff!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.preset-name-card+.preset-name-card,.preset-parameters-group .preset-name-card+.preset-name-card,.preset-setting-card+.preset-setting-card{border-top:0!important}
+.preset-config-icon,.preset-entry-summary .preset-config-icon,.preset-name-card .preset-config-icon{background:transparent!important;color:#34c759!important;border:0!important;box-shadow:none!important}
+.preset-config-icon svg{stroke:#34c759}
+.preset-entry-number{background:#f2f2f7!important;color:#8e8e93!important}
+.preset-name-copy strong,.preset-entry-copy strong,.preset-detail-dialog h3,.preset-name-dialog h3,.preset-delete-dialog h3{color:#1c1c1e!important}
+.preset-name-card>input,.preset-detail-dialog input,.preset-detail-dialog textarea,.preset-name-dialog input,.preset-config-toolbar select,.preset-config-toolbar button,.preset-injection-fields select{border:0!important;background:#f2f2f7!important;color:#1c1c1e!important;box-shadow:none!important}
+.preset-range-control input::-webkit-slider-thumb{border:0!important;background:#fff!important;box-shadow:0 1px 3px #0002!important}
+.preset-range-control input::-webkit-slider-runnable-track,.preset-range-control input::-moz-range-track{background:#e5e5ea!important}
+.preset-range-control output{color:#34c759!important;background:transparent!important;border:0!important}
+.preset-setting-toggle{background:#e5e5ea!important}
+.preset-setting-toggle.on{background:#34c759!important}
+.preset-config-footer{background:#fff!important;border:0!important;box-shadow:none!important}
+.preset-config-footer button{border:0!important;background:#f2f2f7!important;color:#1c1c1e!important}
+.preset-config-footer button:last-child,.preset-detail-dialog footer .preset-detail-done,.preset-name-dialog footer button:last-child,.preset-delete-dialog footer button.confirm{border:0!important;background:#34c759!important;color:#fff!important}
+.preset-detail-dialog,.preset-name-dialog,.preset-delete-dialog{border:0!important;background:#fff!important;box-shadow:0 12px 40px #0000001f!important}
+.preset-detail-overlay,.preset-name-overlay,.preset-delete-overlay{background:#00000033!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.preset-detail-dialog footer .preset-remove-button{background:#fff0ef!important;color:#ff3b30!important;border:0!important}
+.preset-drag-ghost{border:0!important;background:#fff!important;border-radius:0!important;box-shadow:0 8px 24px #0000001f!important}
+.preset-setting-card.dragging{background:#f2f2f7!important;border:0!important;box-shadow:none!important}
+.preset-config-content :is(button,summary):focus-visible{outline:2px solid #34c759!important;outline-offset:2px}
+.preset-detail-dialog footer button{border:0!important;background:#f2f2f7!important;color:#1c1c1e!important}
+.preset-detail-dialog footer .preset-detail-done{background:#34c759!important;color:#fff!important}
+
+/* 预设页右上角版权按钮 */
+.preset-copyright-button{width:44px;height:44px;border:0;background:transparent;color:#34c759;font-size:13px;font-weight:600;cursor:pointer}
+/* 重置默认确认弹窗：确认按钮为红色，取消为浅灰。 */
+.preset-reset-dialog footer{display:flex;gap:10px;margin-top:18px}
+.preset-reset-dialog footer button{flex:1;height:42px;border:0!important;border-radius:999px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.preset-reset-dialog footer button:first-child{background:#f2f2f7!important;color:#1c1c1e!important}
+.preset-reset-dialog footer button.preset-reset-confirm{background:#ff3b30!important;color:#fff!important}

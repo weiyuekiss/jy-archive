@@ -1,6 +1,6 @@
 // Migrate only the built-in behavior entries once; preserve character data,
 // sampling parameters, custom entries and subsequent edits to the new defaults.
-export const roleplayRevision = 2
+export const roleplayRevision = 9
 export const phoneChatScene = `【小手机交流场景】
 你与{{user}}正在通过“小手机”进行远程即时聊天，双方只能通过平台交换消息。角色的身份、所属世界、双方关系及设定中明确的共同经历照常成立，不因交流方式而被否定；无需将自己称为虚拟角色，也不主动讨论模拟、扮演或 AI 身份。
 当前及后续交流中，线下见面、到达对方所在地、接送、登门或触碰对方都不是可执行的行动。不要提出或约定这些行动，不将“之后、等有空、下次”当作可以见面的条件，也不描述自己已经来到对方身边。

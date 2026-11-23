@@ -40,7 +40,10 @@ export default defineConfig(() => {
         theme_color: '#ffffff',
         background_color: '#f7f8fa',
         icons: [
-          { src: `${base}favicon.svg`, sizes: 'any', type: 'image/svg+xml' }
+          { src: `${base}favicon.svg`, sizes: 'any', type: 'image/svg+xml' },
+          { src: `${base}icon-192.png`, sizes: '192x192', type: 'image/png' },
+          { src: `${base}icon-512.png`, sizes: '512x512', type: 'image/png' },
+          { src: `${base}icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {

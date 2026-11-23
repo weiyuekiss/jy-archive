@@ -204,6 +204,174 @@ const coupleDays = computed(() => {
       <span class="caption">my little moment ♡</span>
     </div>
 
+    <!-- 2×2 INS 照片时钟：照片铺满，底部小字时间 -->
+    <div v-else-if="type === 'ins-photo-clock'" class="ins-photo-clock">
+      <button class="ins-photo-hit" type="button" aria-label="更换照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">点击添加照片</span>
+      </button>
+      <div class="ins-photo-clock-time">{{ hh }}:{{ mm }}</div>
+    </div>
+
+    <!-- 4×2 INS 照片加文字：左侧一张照片，右侧一行小字 -->
+    <div v-else-if="type === 'ins-quote-photo'" class="ins-quote-photo">
+      <button class="ins-quote-photo-hit" type="button" aria-label="更换照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <div class="ins-quote-photo-text">
+        <span class="ins-eyebrow">TODAY</span>
+        <p>{{ data.quote || '今天也要好好的' }}</p>
+        <button class="ins-quote-edit" type="button" @click.stop="emit('custom-action', { key: 'quote', title: '修改文字', eyebrow: 'QUOTE', kind: 'text' })">编辑文字</button>
+      </div>
+    </div>
+
+    <!-- 2×2 INS 状态卡：照片头像加一句状态 -->
+    <div v-else-if="type === 'ins-status-card'" class="ins-status-card">
+      <button class="ins-status-avatar" type="button" aria-label="更换头像" @click.stop="emit('custom-action', { key: 'avatar', title: '设置头像', eyebrow: 'AVATAR' })">
+        <img v-if="data.avatar" :src="data.avatar" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <p class="ins-status-text">{{ data.quote || 'Live well and love yourself.' }}</p>
+      <span class="ins-status-bar">Message...</span>
+    </div>
+
+    <!-- 4×2 INS 双照片：两张照片并排，中间一个圆形时间 -->
+    <div v-else-if="type === 'ins-dual-photo'" class="ins-dual-photo">
+      <button class="ins-dual-hit" type="button" aria-label="更换第一张照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置第一张照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <button class="ins-dual-hit" type="button" aria-label="更换第二张照片" @click.stop="emit('custom-action', { key: 'photo2', title: '设置第二张照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo2" :src="data.photo2" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <span class="ins-dual-time">{{ hh }}:{{ mm }}</span>
+    </div>
+
+    <!-- 2×2 INS 透明天气：日期、温度可点击修改 -->
+    <div v-else-if="type === 'ins-weather-clear'" class="ins-weather-clear">
+      <span class="ins-eyebrow">{{ monthEn }} {{ day }} · {{ weekEn }}</span>
+      <button class="ins-weather-temp" type="button" aria-label="修改温度" @click.stop="emit('custom-action', { key: 'temp', title: '修改温度', eyebrow: 'WEATHER', kind: 'text' })">{{ data.temp || '16°' }}</button>
+      <div class="ins-weather-row"><span>{{ data.city || 'SEOUL' }}</span><span>{{ data.cond || '晴' }}</span></div>
+    </div>
+
+    <!-- 2×2 INS 扫码付款：纯图标 -->
+    <div v-else-if="type === 'ins-qr-pay'" class="ins-qr-pay">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM20 14v3M14 20h6" /></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" /></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" /><path d="M8 12h8" /></svg>
+    </div>
+
+    <!-- 2×2 INS 圆形头像：头像圈加一句问候 -->
+    <div v-else-if="type === 'ins-avatar-circle'" class="ins-avatar-circle">
+      <button class="ins-avatar-ring" type="button" aria-label="更换头像" @click.stop="emit('custom-action', { key: 'avatar', title: '设置头像', eyebrow: 'AVATAR' })">
+        <img v-if="data.avatar" :src="data.avatar" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <span class="ins-avatar-tag">{{ data.quote || 'Good morning' }}</span>
+    </div>
+
+    <!-- 2×2 INS 信息接收：系统提示卡片 -->
+    <div v-else-if="type === 'ins-inbox-tip'" class="ins-inbox-tip">
+      <div class="ins-inbox-card">
+        <span class="ins-inbox-title">系统提示</span>
+        <button class="ins-inbox-text" type="button" @click.stop="emit('custom-action', { key: 'text', title: '修改提示内容', eyebrow: 'MESSAGE', kind: 'text' })">{{ data.text || '新消息已送达，请注意查收。' }}</button>
+        <div class="ins-inbox-btns"><span>稍后</span><span>知道了</span></div>
+      </div>
+    </div>
+
+    <!-- 4×2 INS 每日文案：日期加一段可编辑文字 -->
+    <div v-else-if="type === 'ins-daily-copy'" class="ins-daily-copy">
+      <span class="ins-eyebrow">{{ weekEn }} · {{ monthEn }} {{ day }}</span>
+      <button class="ins-daily-text" type="button" @click.stop="emit('custom-action', { key: 'quote', title: '修改文案', eyebrow: 'TEXT', kind: 'text' })">{{ data.quote || '今天也要好好吃饭，好好睡觉。' }}</button>
+      <span class="ins-daily-time">{{ hh }}:{{ mm }}</span>
+    </div>
+
+    <!-- 4×2 INS 氛围时间：整张照片做背景，叠加时间与日期 -->
+    <div v-else-if="type === 'ins-film-clock'" class="ins-film-clock">
+      <button class="ins-film-hit" type="button" aria-label="更换背景照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置背景照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <div class="ins-film-time">{{ hh }}:{{ mm }}</div>
+      <span class="ins-film-date">{{ monthEn }} {{ day }}</span>
+    </div>
+
+    <!-- 4×2 INS 黑白日期：左侧大号日期，右侧两张照片 -->
+    <div v-else-if="type === 'ins-bw-date'" class="ins-bw-date">
+      <div class="ins-bw-head">
+        <span class="ins-eyebrow">{{ monthEn }}</span>
+        <span class="ins-bw-day">{{ day }}</span>
+      </div>
+      <button class="ins-hit ins-bw-photo" type="button" aria-label="更换第一张照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置第一张照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <button class="ins-hit ins-bw-photo" type="button" aria-label="更换第二张照片" @click.stop="emit('custom-action', { key: 'photo2', title: '设置第二张照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo2" :src="data.photo2" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+    </div>
+
+    <!-- 4×4 INS 照片文案：三张照片、一段文字、底部时间条 -->
+    <div v-else-if="type === 'ins-story-note'" class="ins-story-note">
+      <span class="ins-story-title">STORY MODE</span>
+      <div class="ins-story-row">
+        <button class="ins-hit" type="button" aria-label="更换第一张照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置第一张照片', eyebrow: 'PHOTO' })">
+          <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+          <span v-else class="ins-photo-empty">＋</span>
+        </button>
+        <button class="ins-hit" type="button" aria-label="更换第二张照片" @click.stop="emit('custom-action', { key: 'photo2', title: '设置第二张照片', eyebrow: 'PHOTO' })">
+          <img v-if="data.photo2" :src="data.photo2" alt="" draggable="false" />
+          <span v-else class="ins-photo-empty">＋</span>
+        </button>
+        <button class="ins-hit" type="button" aria-label="更换第三张照片" @click.stop="emit('custom-action', { key: 'photo3', title: '设置第三张照片', eyebrow: 'PHOTO' })">
+          <img v-if="data.photo3" :src="data.photo3" alt="" draggable="false" />
+          <span v-else class="ins-photo-empty">＋</span>
+        </button>
+      </div>
+      <button class="ins-story-text" type="button" @click.stop="emit('custom-action', { key: 'quote', title: '修改文案', eyebrow: 'TEXT', kind: 'text' })">{{ data.quote || '跟我一起看星星吧，一起聊聊里总是北极星。' }}</button>
+      <div class="ins-story-bar"><span>{{ monthEn }} {{ day }}</span><span>{{ hh }}:{{ mm }}</span></div>
+    </div>
+
+    <!-- 4×4 INS 回忆相册：三张相纸叠放，底部一句文字 -->
+    <div v-else-if="type === 'ins-memory-album'" class="ins-memory-album">
+      <div class="ins-memory-head"><span>MEMORY</span><span>{{ weekEn }}</span></div>
+      <div class="ins-memory-stack">
+        <button class="ins-hit ins-memory-card c1" type="button" aria-label="更换第一张照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置第一张照片', eyebrow: 'PHOTO' })">
+          <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+          <span v-else class="ins-photo-empty">＋</span>
+        </button>
+        <button class="ins-hit ins-memory-card c2" type="button" aria-label="更换第二张照片" @click.stop="emit('custom-action', { key: 'photo2', title: '设置第二张照片', eyebrow: 'PHOTO' })">
+          <img v-if="data.photo2" :src="data.photo2" alt="" draggable="false" />
+          <span v-else class="ins-photo-empty">＋</span>
+        </button>
+        <button class="ins-hit ins-memory-card c3" type="button" aria-label="更换第三张照片" @click.stop="emit('custom-action', { key: 'photo3', title: '设置第三张照片', eyebrow: 'PHOTO' })">
+          <img v-if="data.photo3" :src="data.photo3" alt="" draggable="false" />
+          <span v-else class="ins-photo-empty">＋</span>
+        </button>
+      </div>
+      <button class="ins-memory-cap" type="button" @click.stop="emit('custom-action', { key: 'quote', title: '修改文字', eyebrow: 'TEXT', kind: 'text' })">{{ data.quote || '这一年的小事，都在这里。' }}</button>
+    </div>
+
+    <!-- 4×4 INS 功能面板：时间日期、封面照片、天气与进度条 -->
+    <div v-else-if="type === 'ins-dashboard'" class="ins-dashboard">
+      <div class="ins-dash-top">
+        <span class="ins-dash-time">{{ hh }}:{{ mm }}</span>
+        <span class="ins-dash-date">{{ monthEn }} {{ day }} · 周{{ weekCn }}</span>
+      </div>
+      <button class="ins-hit ins-dash-cover" type="button" aria-label="更换封面照片" @click.stop="emit('custom-action', { key: 'photo', title: '设置封面照片', eyebrow: 'PHOTO' })">
+        <img v-if="data.photo" :src="data.photo" alt="" draggable="false" />
+        <span v-else class="ins-photo-empty">＋</span>
+      </button>
+      <div class="ins-dash-row">
+        <span>{{ data.city || '晴 16°' }}</span>
+        <span class="ins-dash-bar" />
+      </div>
+    </div>
+
     <!-- 4×4 备忘 -->
     <div v-else-if="type === 'memo'" class="memo">
       <span class="eyebrow">TO DO LIST</span>
@@ -1378,6 +1546,111 @@ const coupleDays = computed(() => {
 .pc-stat b{max-width:100%;overflow:hidden;font-size:clamp(12px,3.5vw,16px);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
 .pc-stat span{color:#9a9ca1;font-size:clamp(8px,2.2vw,10px);letter-spacing:.11em}
 .pc-profile button:focus-visible,.pc-stat:focus-visible,.pc-cover:focus-visible{outline:2px solid #78869a;outline-offset:-3px}
+
+/* ===== INS 风格照片小组件（图片可替换，白底细字） ===== */
+.ins-photo-clock,.ins-quote-photo,.ins-status-card,.ins-dual-photo{display:flex;align-items:center;justify-content:center;background:#fff;color:#2b2b2b}
+.ins-photo-hit,.ins-quote-photo-hit,.ins-status-avatar,.ins-dual-hit{display:grid;place-items:center;overflow:hidden;padding:0;border:0;background:#f1f1f2;cursor:pointer}
+.ins-photo-hit img,.ins-quote-photo-hit img,.ins-status-avatar img,.ins-dual-hit img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+.ins-photo-empty{color:#b5b5b8;font-size:clamp(12px,3.5vw,18px);font-weight:300}
+
+/* 2×2 照片时钟 */
+.ins-photo-clock{position:relative;padding:8%}
+.ins-photo-clock .ins-photo-hit{width:100%;height:100%;border-radius:18px}
+.ins-photo-clock-time{position:absolute;left:0;right:0;bottom:12%;text-align:center;color:#fff;font-size:clamp(18px,7vw,30px);font-weight:300;letter-spacing:.04em;text-shadow:0 1px 6px rgba(0,0,0,.25);pointer-events:none}
+
+/* 4×2 照片加文字 */
+.ins-quote-photo{gap:4%;padding:7%;box-sizing:border-box}
+.ins-quote-photo-hit{flex:0 0 42%;height:100%;border-radius:16px}
+.ins-quote-photo-text{display:flex;flex:1;min-width:0;flex-direction:column;gap:6px;align-items:flex-start}
+.ins-eyebrow{color:#9a9ca1;font-size:clamp(8px,2.2vw,10px);letter-spacing:.14em}
+.ins-quote-photo-text p{margin:0;display:-webkit-box;overflow:hidden;color:#2b2b2b;font-size:clamp(12px,3.6vw,16px);line-height:1.45;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.ins-quote-edit{margin-top:auto;padding:0;border:0;background:none;color:#9a9ca1;font-size:clamp(9px,2.6vw,11px);cursor:pointer}
+
+/* 2×2 状态卡 */
+.ins-status-card{flex-direction:column;gap:6%;padding:9%;box-sizing:border-box}
+.ins-status-avatar{width:42%;aspect-ratio:1;border-radius:50%}
+.ins-status-text{margin:0;max-width:100%;overflow:hidden;color:#4a4a4e;font-size:clamp(9px,2.8vw,12px);font-style:italic;text-align:center;text-overflow:ellipsis;white-space:nowrap}
+.ins-status-bar{width:100%;padding:5px 10px;border-radius:999px;background:#f3f3f4;color:#b0b0b4;font-size:clamp(8px,2.4vw,10px);box-sizing:border-box}
+
+/* 4×2 双照片 */
+.ins-dual-photo{position:relative;gap:4%;padding:7%;box-sizing:border-box}
+.ins-dual-hit{flex:1;height:100%;border-radius:16px}
+.ins-dual-time{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:34%;aspect-ratio:1;display:grid;place-items:center;border-radius:50%;background:#fff;color:#2b2b2b;font-size:clamp(10px,3vw,14px);font-weight:500;box-shadow:0 2px 10px rgba(0,0,0,.12);pointer-events:none}
+
+/* ===== 第二批 INS 组件（10 个）：白底，图片可替换 ===== */
+.ins-hit{display:grid;place-items:center;overflow:hidden;padding:0;border:0;border-radius:14px;background:#f1f1f2;cursor:pointer}
+.ins-hit img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+.ins-weather-clear,.ins-qr-pay,.ins-avatar-circle,.ins-inbox-tip,.ins-daily-copy,.ins-film-clock,.ins-bw-date,.ins-story-note,.ins-memory-album,.ins-dashboard{position:relative;box-sizing:border-box;padding:8%;overflow:hidden;background:#fff;color:#2b2b2b}
+
+/* 2×2 透明天气 */
+.ins-weather-clear{display:flex;flex-direction:column;justify-content:space-between}
+.ins-weather-temp{align-self:flex-start;padding:0;border:0;background:none;color:#2b2b2b;font:inherit;font-size:clamp(28px,12vw,48px);font-weight:200;line-height:1;cursor:pointer}
+.ins-weather-row{display:flex;justify-content:space-between;color:#6b6b70;font-size:clamp(9px,2.8vw,12px)}
+
+/* 2×2 扫码付款 */
+.ins-qr-pay{display:grid;grid-template-columns:1fr 1fr;place-items:center;gap:8%}
+.ins-qr-pay svg{width:42%;height:42%;fill:none;stroke:#2b2b2b;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+/* 2×2 圆形头像 */
+.ins-avatar-circle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10%}
+.ins-avatar-ring{width:62%;aspect-ratio:1;padding:0;border:3px solid #fff;border-radius:50%;background:#f1f1f2;box-shadow:0 0 0 1.5px #2b2b2b;overflow:hidden;display:grid;place-items:center;cursor:pointer}
+.ins-avatar-ring img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+.ins-avatar-tag{color:#6b6b70;font-size:clamp(9px,2.6vw,11px);letter-spacing:.04em}
+
+/* 2×2 信息接收 */
+.ins-inbox-tip{display:flex;align-items:center;justify-content:center;background-color:#fff;background-image:radial-gradient(#cfcfd3 1.2px, transparent 1.2px);background-size:10px 10px}
+.ins-inbox-card{display:flex;flex-direction:column;gap:6px;width:100%;padding:10% 9%;box-sizing:border-box;border-radius:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.ins-inbox-title{color:#9a9ca1;font-size:clamp(9px,2.6vw,11px);letter-spacing:.1em}
+.ins-inbox-text{padding:0;border:0;background:none;color:#2b2b2b;font:inherit;font-size:clamp(10px,3vw,13px);line-height:1.5;text-align:left;cursor:pointer}
+.ins-inbox-btns{display:flex;justify-content:flex-end;gap:6px;color:#6b6b70;font-size:clamp(9px,2.6vw,11px)}
+.ins-inbox-btns span{padding:3px 8px;border-radius:999px;background:#f3f3f4}
+
+/* 4×2 每日文案 */
+.ins-daily-copy{display:flex;flex-direction:column;justify-content:space-between}
+.ins-daily-text{padding:0;border:0;background:none;color:#2b2b2b;font:inherit;font-size:clamp(14px,4.4vw,20px);font-weight:500;line-height:1.4;text-align:left;cursor:pointer;display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.ins-daily-time{align-self:flex-end;color:#9a9ca1;font-size:clamp(9px,2.6vw,11px)}
+
+/* 4×2 氛围时间：整张背景照片 */
+.ins-film-clock{padding:0;background:#1d1d1f}
+.ins-film-hit{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;border-radius:0;background:#1d1d1f;display:grid;place-items:center;cursor:pointer}
+.ins-film-hit img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+.ins-film-time{position:absolute;left:7%;bottom:9%;color:#fff;font-size:clamp(20px,7vw,34px);font-weight:300;letter-spacing:.04em;text-shadow:0 1px 6px rgba(0,0,0,.35);pointer-events:none}
+.ins-film-date{position:absolute;right:7%;bottom:12%;color:#fff;font-size:clamp(9px,2.6vw,11px);letter-spacing:.14em;text-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:none}
+
+/* 4×2 黑白日期 */
+.ins-bw-date{display:flex;align-items:stretch;gap:5%}
+.ins-bw-head{display:flex;flex-direction:column;justify-content:space-between;width:24%}
+.ins-bw-day{font-size:clamp(26px,9vw,44px);font-weight:200;line-height:1}
+.ins-bw-photo{flex:1;height:100%}
+
+/* 4×4 照片文案 */
+.ins-story-note{display:flex;flex-direction:column;gap:5%}
+.ins-story-title{color:#6b6b70;font-size:clamp(9px,2.6vw,11px);letter-spacing:.14em;text-align:center}
+.ins-story-row{display:grid;grid-template-columns:repeat(3,1fr);gap:4%;flex:1;min-height:0}
+.ins-story-row .ins-hit{height:100%;border-radius:10px}
+.ins-story-text{padding:6px 4%;border:0;border-radius:10px;background:#f5f5f6;color:#4a4a4e;font:inherit;font-size:clamp(9px,2.8vw,12px);line-height:1.5;text-align:center;cursor:pointer}
+.ins-story-bar{display:flex;justify-content:space-between;padding:6px 10px;border-radius:999px;background:#1d1d1f;color:#fff;font-size:clamp(8px,2.4vw,10px)}
+
+/* 4×4 回忆相册 */
+.ins-memory-album{display:flex;flex-direction:column;gap:6%}
+.ins-memory-head{display:flex;justify-content:space-between;color:#6b6b70;font-size:clamp(9px,2.6vw,11px);letter-spacing:.08em}
+.ins-memory-stack{position:relative;flex:1;min-height:0}
+.ins-memory-card{position:absolute;width:44%;aspect-ratio:3/4;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.ins-memory-card.c1{left:4%;top:6%;transform:rotate(-5deg)}
+.ins-memory-card.c2{left:28%;top:0;transform:rotate(2deg);z-index:2}
+.ins-memory-card.c3{left:52%;top:8%;transform:rotate(6deg)}
+.ins-memory-cap{padding:0;border:0;background:none;color:#6b6b70;font:inherit;font-size:clamp(9px,2.8vw,12px);text-align:center;cursor:pointer}
+
+/* 4×4 功能面板 */
+.ins-dashboard{display:flex;flex-direction:column;gap:6%}
+.ins-dash-top{display:flex;justify-content:space-between;align-items:baseline}
+.ins-dash-time{font-size:clamp(20px,7vw,32px);font-weight:300}
+.ins-dash-date{color:#9a9ca1;font-size:clamp(9px,2.6vw,11px);letter-spacing:.06em}
+.ins-dash-cover{flex:1;min-height:0;border-radius:14px}
+.ins-dash-cover img{border-radius:14px}
+.ins-dash-row{display:flex;align-items:center;gap:8px;color:#6b6b70;font-size:clamp(9px,2.8vw,12px)}
+.ins-dash-bar{position:relative;flex:1;height:4px;border-radius:999px;background:#ececee;overflow:hidden}
+.ins-dash-bar::after{content:'';position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:inherit;background:#2b2b2b}
 
 </style>
 

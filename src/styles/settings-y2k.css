@@ -146,6 +146,32 @@
 :deep(.api-settings-page .model-chip.active){background:#252d70;color:#fff}
 :deep(.api-settings-page .model-chip.active .check-mark){color:#fff}
 :deep(.api-settings-page button:active:not(:disabled)){border-color:#555 #fff #fff #555;box-shadow:inset 1px 1px #888}
+
+/* API 页面界面优化：保留 Windows 9x 灰色面板风格，统一间距、层级与可点击反馈。 */
+.settings-subpage>.api-settings-page{max-width:680px;padding:16px 18px 28px;gap:14px}
+:deep(.api-settings-page .k-card){padding:16px 16px 14px;margin:0}
+:deep(.api-settings-page .card-head){margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid #9a9a9a;box-shadow:0 1px #fff}
+:deep(.api-settings-page .section-title){font-size:13px;letter-spacing:.02em}
+:deep(.api-settings-page .count-pill),:deep(.api-settings-page .hint-tag){padding:2px 7px;border:1px solid;border-color:#fff #888 #888 #fff;background:#d0d0d0;color:#44445a}
+:deep(.api-settings-page .field-item){margin-top:16px}
+:deep(.api-settings-page .field-label){margin-bottom:7px;color:#2f2f3a;font-size:11px;font-weight:bold}
+:deep(.api-settings-page .input-wrap),:deep(.api-settings-page .preset-picker){min-height:36px;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff;box-shadow:inset 1px 1px #d0d0d0}
+:deep(.api-settings-page .input-wrap:focus-within),:deep(.api-settings-page .preset-picker:focus){outline:1px dotted #252d70;outline-offset:-4px}
+:deep(.api-settings-page .k-input){padding:8px 9px;font-size:12px!important;color:#1f1f28;font-family:"Consolas","Courier New",monospace}
+:deep(.api-settings-page .k-input::placeholder){color:#9a9aa3}
+:deep(.api-settings-page .k-action-btn),:deep(.api-settings-page .k-primary-btn),:deep(.api-settings-page .preset-remove),:deep(.api-settings-page .model-list-toggle),:deep(.api-settings-page .suffix-toggle),:deep(.api-settings-page .tag-pill),:deep(.api-settings-page .k-text-btn){min-height:30px;padding:5px 12px;font-size:11px}
+:deep(.api-settings-page .k-action-btn:hover:not(:disabled)),:deep(.api-settings-page .k-primary-btn:hover),:deep(.api-settings-page .tag-pill:hover){background:#d4d4dc;color:#252d70}
+:deep(.api-settings-page .k-primary-btn){background:#252d70;color:#fff;border-color:#8688ad #101235 #101235 #8688ad;outline:none}
+:deep(.api-settings-page .k-primary-btn:hover){background:#343c8a;color:#fff}
+:deep(.api-settings-page .quick-tags){gap:8px;margin-top:10px;align-items:center}
+:deep(.api-settings-page .tag-pill){min-height:26px;padding:3px 9px;font-size:10px;background:#d4d4d4}
+:deep(.api-settings-page .model-select-row){gap:10px}
+:deep(.api-settings-page .models-box){margin-top:14px;padding:12px;background:#cfcfcf}
+:deep(.api-settings-page .model-chips-list){gap:8px}
+:deep(.api-settings-page .model-chip){min-height:30px;padding:6px 10px;border:2px solid;border-color:#fff #808080 #808080 #fff;background:#d0d0d0;color:#252530}
+:deep(.api-settings-page .model-chip:hover){background:#dcdce4}
+:deep(.api-settings-page .model-chip.active){background:#252d70;color:#fff;border-color:#8688ad #101235 #101235 #8688ad}
+@media(max-width:380px){.settings-subpage>.api-settings-page{padding:12px 12px 22px}:deep(.api-settings-page .k-input){font-size:11px!important}}
 @media(max-width:380px){.settings-subpage>.api-settings-page{padding:10px 10px 20px}:deep(.api-settings-page .k-card){padding:11px}:deep(.api-settings-page .card-head){align-items:flex-start}:deep(.api-settings-page .hint-tag){font-size:8px}:deep(.api-settings-page .model-select-row){flex-wrap:wrap}:deep(.api-settings-page .model-select-row .input-wrap){flex-basis:100%!important}}
 
 /* 人设配置：经典属性窗口与更清晰的表单层级。 */
@@ -193,3 +219,60 @@
 :deep(.profile-settings-page .profile-action-bar .k-primary-btn){color:#202030;background:#c0c0c0;outline:1px dotted #444;outline-offset:-6px}
 :deep(.profile-settings-page button:active:not(:disabled)){border-color:#555 #fff #fff #555;box-shadow:inset 1px 1px #888}
 @media(max-width:380px){:deep(.profile-settings-page){padding:10px 10px 20px}:deep(.profile-settings-page .polaroid-switcher){padding:9px;gap:5px}:deep(.profile-settings-page .profile-card-preview){padding:9px;gap:8px}:deep(.profile-settings-page .preview-avatar){width:48px;height:48px}:deep(.profile-settings-page .k-card){padding:11px}:deep(.profile-settings-page .hint-tag){font-size:8px}}
+
+/* API 页面：属性窗口布局。顶部预设栏，下方连接/模型两个标签页。 */
+:deep(.api-settings-page .api-preset-bar){display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;margin:0 0 10px;border:2px solid;border-color:#808080 #fff #fff #808080;background:#d4d4d4}
+:deep(.api-settings-page .api-preset-bar .preset-picker-label){font-size:11px;color:#3e3e46}
+:deep(.api-settings-page .api-preset-bar .preset-picker){flex:1;min-width:140px;height:30px;font-size:11px}
+:deep(.api-settings-page .api-preset-bar-actions){display:flex;gap:6px}
+:deep(.api-settings-page .api-tabs){display:flex;gap:2px;padding:0 6px;margin:0;position:relative;z-index:1}
+:deep(.api-settings-page .api-tab){min-height:28px;padding:4px 16px;border:2px solid;border-color:#fff #808080 transparent #fff;border-bottom:0;background:#bdbdbd;color:#444;font-size:11px;cursor:pointer;margin-bottom:-2px}
+:deep(.api-settings-page .api-tab.active){background:#d4d4d4;color:#252d70;font-weight:bold;padding-bottom:6px}
+:deep(.api-settings-page .api-tab:not(.active):hover){background:#cbcbd6}
+:deep(.api-settings-page .api-tab-panel){padding:14px 14px 12px;border:2px solid;border-color:#fff #808080 #808080 #fff;background:#d4d4d4}
+:deep(.api-settings-page .model-fetch-row){display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* API 页面：标签与预设栏内的小装饰图标 */
+:deep(.api-settings-page .api-tab .retro-sticker),:deep(.api-settings-page .preset-picker-label .retro-sticker){width:16px;height:16px;margin-right:4px;vertical-align:-3px;filter:none}
+:deep(.api-settings-page .preset-picker-label){display:inline-flex;align-items:center}
+/* API 页面：按钮文字保持横排，不逐字换行 */
+:deep(.api-settings-page button){white-space:nowrap;writing-mode:horizontal-tb}
+:deep(.api-settings-page .suffix-toggle){min-width:44px}
+
+/* 人设配置页：标签页分组，自我介绍输入区加大 */
+:deep(.profile-settings-page .profile-tabs){display:flex;gap:2px;padding:0 6px;margin:4px 0 0;position:relative;z-index:1}
+:deep(.profile-settings-page .profile-tab){display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:4px 16px;border:2px solid;border-color:#fff #808080 transparent #fff;border-bottom:0;background:#bdbdbd;color:#444;font-size:11px;cursor:pointer;margin-bottom:-2px;white-space:nowrap}
+:deep(.profile-settings-page .profile-tab .retro-sticker){width:16px;height:16px;filter:none}
+:deep(.profile-settings-page .profile-tab.active){background:#d4d4d4;color:#252d70;font-weight:bold;padding-bottom:6px}
+:deep(.profile-settings-page .profile-tab:not(.active):hover){background:#cbcbd6}
+:deep(.profile-settings-page .profile-tab-panel){padding:0;border:0}
+:deep(.profile-settings-page .profile-tab-panel>.k-card){margin-top:0}
+:deep(.profile-settings-page .k-textarea){min-height:300px;line-height:1.7;font-size:12px!important;font-family:inherit}
+:deep(.profile-settings-page .textarea-wrap){min-height:320px}
+
+/* 人设与 API 页面：去除厚重方块卡片，改为扁平分组，仅保留标题下细线。 */
+:deep(.profile-settings-page .k-card),:deep(.api-settings-page .k-card){border:0;background:transparent;box-shadow:none;padding:4px 2px 14px;margin:0}
+:deep(.profile-settings-page .card-head),:deep(.api-settings-page .card-head){margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid #b4b4b4;box-shadow:none}
+:deep(.profile-settings-page .polaroid-switcher){border:0;background:transparent;box-shadow:none;padding:4px 0}
+:deep(.profile-settings-page .profile-card-preview),:deep(.profile-settings-page .profile-card-preview.empty){border:0;background:transparent;box-shadow:none;padding:4px 0 12px;border-bottom:1px solid #b4b4b4}
+:deep(.profile-settings-page .avatar-edit-box),:deep(.profile-settings-page .models-box){border:0;background:transparent;box-shadow:none;padding:0}
+:deep(.profile-settings-page .avatar-thumb){border:1px solid #b4b4b4;background:#fff}
+:deep(.profile-settings-page .profile-tab-panel){background:transparent}
+:deep(.profile-settings-page .input-wrap),:deep(.profile-settings-page .textarea-wrap),:deep(.api-settings-page .input-wrap),:deep(.api-settings-page .preset-picker){border:1px solid #9a9a9a;box-shadow:none;background:#fff}
+:deep(.api-settings-page .api-preset-bar){border:0;background:transparent;box-shadow:none;padding:0 0 10px;border-bottom:1px solid #b4b4b4}
+:deep(.api-settings-page .api-tab-panel){border:0;background:transparent;box-shadow:none;padding:4px 0 0}
+:deep(.api-settings-page .models-box){border:0;background:transparent;box-shadow:none;padding:0}
+:deep(.profile-settings-page .profile-tab-panel>.k-card){padding-top:2px}
+
+/* 去除主要按钮的虚线外框；数据存储弹窗改为轻量边框，去掉厚重阴影。 */
+:deep(.api-settings-page .k-action-btn.primary),:deep(.api-settings-page .k-primary-btn){outline:none}
+:deep(.profile-settings-page .profile-action-bar .k-primary-btn){outline:none}
+.storage-dialog-actions button.primary{outline:none}
+.storage-dialog{width:min(100%,320px);border:1px solid #808080;box-shadow:0 2px 0 #0002;padding:0;background:#d4d4d4}
+.storage-dialog-titlebar{min-height:26px;padding:3px 6px;background:#252d70}
+.storage-dialog-content{padding:14px 14px 14px}
+.storage-dialog-message .retro-sticker{width:36px;height:36px}
+.storage-dialog-actions{margin-top:14px;gap:8px}
+.storage-dialog-actions button{border:1px solid #808080;box-shadow:none;background:#e0e0e0;min-height:30px}
+.storage-dialog-actions button.primary{background:#252d70;color:#fff;border-color:#252d70}
+.storage-dialog-actions button:active:not(:disabled){box-shadow:none;background:#cfcfcf}
+.storage-dialog-close{border:1px solid #808080;box-shadow:none;background:#e0e0e0}

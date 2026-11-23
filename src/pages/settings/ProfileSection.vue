@@ -17,6 +17,7 @@ const avatarInput = ref(null)
 const isFlipping = ref(false)
 const showDeleteModal = ref(false)
 const showClearModal = ref(false)
+const activeTab = ref('basic')
 let flipTimer = null
 
 async function switchProfile(id) {
@@ -181,11 +182,15 @@ const hasProfileData = computed(() => {
       <div class="profile-dots"><button v-for="(profile, index) in profileSettings.profiles" :key="profile.id" type="button" :aria-label="`切换到第 ${index + 1} 个人设`" :class="{ active: profile.id === profileSettings.currentProfileId }" @click="switchProfile(profile.id)" /></div>
     </div>
 
+    <div class="profile-tabs" role="tablist">
+      <button type="button" role="tab" class="profile-tab" :class="{ active: activeTab === 'basic' }" :aria-selected="activeTab === 'basic'" @click="activeTab = 'basic'"><RetroSticker kind="profile" />基础资料</button>
+      <button type="button" role="tab" class="profile-tab" :class="{ active: activeTab === 'bio' }" :aria-selected="activeTab === 'bio'" @click="activeTab = 'bio'"><RetroSticker kind="folder" />自我介绍</button>
+    </div>
+    <div class="profile-tab-panel" role="tabpanel">
     <!-- 基础身份信息表单 -->
-    <div class="k-card">
+    <div v-if="activeTab === 'basic'" class="k-card">
       <div class="card-head">
         <span class="section-title"><RetroSticker kind="profile"/>基础身份信息</span>
-        <span class="hint-tag">纯本地保存 · 无默认预设</span>
       </div>
 
       <!-- 头像配置 -->
@@ -285,7 +290,7 @@ const hasProfileData = computed(() => {
       </div>
     </div>
     <!-- 详细自我介绍（用户是个什么样的人） -->
-    <div class="k-card">
+    <div v-if="activeTab === 'bio'" class="k-card">
       <div class="card-head">
         <div class="title-with-badge">
           <span class="section-title"><RetroSticker kind="folder"/>自我介绍</span>
@@ -301,12 +306,13 @@ const hasProfileData = computed(() => {
         <div class="textarea-wrap">
           <textarea
             v-model="userProfile.bio"
-            rows="6"
+            rows="14"
             placeholder="说说你的兴趣、性格，以及偏好的交流方式…"
             class="k-textarea"
           />
         </div>
       </div>
+    </div>
     </div>
 
     <transition name="modal-fade">

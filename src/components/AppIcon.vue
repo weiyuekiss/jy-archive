@@ -9,7 +9,9 @@ const props = defineProps({
   app: { type: Object, required: true },
   // 是否启用液态玻璃质感（未传则跟随全局设置）
   glass: { type: Boolean, default: null },
-  frosted: { type: Boolean, default: false }
+  frosted: { type: Boolean, default: false },
+  // 预览时传入草稿中的自定义图标，未传则使用已应用的全局图标
+  customIconOverride: { type: String, default: null }
 })
 
 const isGlass = computed(() => {
@@ -17,20 +19,20 @@ const isGlass = computed(() => {
 })
 
 const customIcon = computed(() => {
-  return theme.customIcons?.[props.app.id] || null
+  return props.customIconOverride || theme.customIcons?.[props.app.id] || null
 })
 </script>
 
 <template>
   <button class="app" type="button" :data-app="app.id" :aria-label="app.pending ? `${app.name}，敬请期待` : app.name" :aria-disabled="app.pending || undefined" @click="openApp(app)">
     <div class="app-icon" :class="{ 'is-glass': isGlass && !frosted, 'is-frosted': frosted }">
-      <SolidAppIcon v-if="frosted" :name="app.id" class="frosted-symbol" />
       <img
-        v-else-if="customIcon"
+        v-if="customIcon"
         :src="customIcon"
         :alt="app.name"
         class="custom-icon-img"
       />
+      <SolidAppIcon v-else-if="frosted" :name="app.id" class="frosted-symbol" />
       <component :is="app.icon" v-else />
     </div>
     <span class="app-name" :class="{ 'glass-text': isGlass }">{{ app.name }}</span>
@@ -126,8 +128,8 @@ const customIcon = computed(() => {
 .app-icon.is-frosted {
   background: transparent;
   border: 0;
-  color: #ffffff;
-  filter: drop-shadow(0 1px 2px rgba(30, 35, 45, 0.2));
+  color: #2b2b2e;
+  filter: drop-shadow(0 1px 2px rgba(30, 35, 45, 0.12));
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   backdrop-filter: blur(18px) saturate(140%);
   box-shadow: 0 5px 16px rgba(35, 42, 52, 0.06);

@@ -1,6 +1,6 @@
 /* JyOS 设置应用：经典 Windows 灰色窗口与深蓝标题栏 */
-@import url("https://fontsapi.zeoseven.com/995/main/result.css");
-.settings-app{--ink:#30343a;--muted:#666b73;--line:#9a9da3;--paper:#f7f7f7;--wash:#d4d4d4;position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;overflow:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);background:radial-gradient(#aeb3bb 1px,transparent 1.5px),#c7cbd1;background-size:12px 12px;color:var(--ink);font-family:"Z Labs RoundPix 12px M CN","Microsoft YaHei","PingFang SC",sans-serif;font-weight:normal;font-size:13px}
+@import url("https://fontsapi.zeoseven.com/572/main/result.css");
+.settings-app{--ink:#30343a;--muted:#666b73;--line:#9a9da3;--paper:#f7f7f7;--wash:#d4d4d4;position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;overflow:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);background:radial-gradient(#aeb3bb 1px,transparent 1.5px),#c7cbd1;background-size:12px 12px;color:var(--ink);font-family:"Unifont","Microsoft YaHei","PingFang SC",sans-serif;font-weight:normal;font-size:13px}
 .settings-app button,.settings-app input,.settings-app textarea,.settings-app select{font:inherit}
 .settings-back-btn{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:10px;z-index:60;width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #fff;border-right-color:#686b70;border-bottom-color:#686b70;color:#173b73;background:#c8c9cc;box-shadow:inset 1px 1px #fff;cursor:pointer}
 .settings-back-btn svg,.settings-page-header svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter}

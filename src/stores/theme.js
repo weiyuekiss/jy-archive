@@ -3,14 +3,9 @@ import { reactive, watch } from 'vue'
 import { loadValue, saveValue } from './db'
 
 // 7 个低饱和浅色渐变壁纸（加上“相册”自定义项）
+// 仅保留一款浅白壁纸：纯白底，叠加极轻的暖白渐变，让白色图标与卡片有层次
 export const WALLPAPERS = [
-  { id: 'mint', name: '雾感薄荷', css: 'linear-gradient(135deg, #b8dfcc 0%, #cce4c7 52%, #e8e5c8 100%)' },
-  { id: 'cream', name: '晨光奶油', css: 'linear-gradient(145deg, #f0d9a8 0%, #e8c99e 48%, #f3e3c1 100%)' },
-  { id: 'sky', name: '浅天空', css: 'linear-gradient(160deg, #b6d5e8 0%, #b9dfdc 55%, #e5dfc7 100%)' },
-  { id: 'lavender', name: '淡薰衣草', css: 'linear-gradient(145deg, #c9b9e2 0%, #ddc4dc 52%, #ead7b0 100%)' },
-  { id: 'blush', name: '柔粉晨光', css: 'linear-gradient(135deg, #e8b7c9 0%, #cbb8df 38%, #edcf9f 72%, #eee4cf 100%)' },
-  { id: 'sage', name: '清浅鼠尾草', css: 'linear-gradient(150deg, #b9d0b9 0%, #d3d6ad 50%, #e9d9b4 100%)' },
-  { id: 'blue-fog', name: '云雾浅蓝', css: 'linear-gradient(145deg, #b3c9e0 0%, #bad7d5 52%, #e6d8bd 100%)' }
+  { id: 'pearl', name: '珍珠白', css: 'linear-gradient(180deg, #ffffff 0%, #f8f8fa 60%, #f2f2f5 100%)' }
 ]
 
 // 5 个低饱和韩系液态玻璃色调预设（Korean Muted Glass Tints）
@@ -118,7 +113,7 @@ export const ICON_STYLES = [
 
 export const theme = reactive({
   // 壁纸 id，如 'mint', 'cream' 或 'custom'
-  wallpaper: 'blush',
+  wallpaper: 'pearl',
   // 自定义壁纸 Base64 或 URL
   customImage: '',
   // 图标风格 id
@@ -156,27 +151,6 @@ export function glassVars(tintId = 'clear') {
   }
 }
 
-export function wallpaperSurfaceVars(wallpaperId) {
-  const surfaces = {
-    mint: ['rgba(226, 241, 231, 0.88)', '#476454'],
-    cream: ['rgba(250, 240, 220, 0.9)', '#6b5b43'],
-    sky: ['rgba(225, 239, 246, 0.9)', '#466171'],
-    lavender: ['rgba(237, 230, 246, 0.9)', '#5d506f'],
-    blush: ['rgba(245, 228, 238, 0.9)', '#6b5263'],
-    sage: ['rgba(229, 239, 226, 0.9)', '#4d624d'],
-    'blue-fog': ['rgba(226, 236, 246, 0.9)', '#4d6072'],
-    custom: ['rgba(242, 239, 232, 0.88)', '#4c4b47']
-  }
-  const [surface, foreground] = surfaces[wallpaperId] || surfaces.mint
-  return {
-    '--icon-bg': surface,
-    '--icon-fg': foreground,
-    '--dock-bg': surface,
-    '--dock-border': 'rgba(255, 255, 255, 0.42)',
-    '--dock-highlight': 'rgba(255, 255, 255, 0.42)'
-  }
-}
-
 // 获取图标风格的 CSS 变量
 export function iconStyleVars(styleId) {
   const found = ICON_STYLES.find((s) => s.id === styleId)
@@ -186,7 +160,11 @@ export function iconStyleVars(styleId) {
 // 从 IndexedDB 读取主题配置
 loadValue('theme').then((saved) => {
   if (saved) {
-    if (typeof saved.wallpaper === 'string') theme.wallpaper = saved.wallpaper
+    if (typeof saved.wallpaper === 'string') {
+      // 已删除的彩色壁纸回退到默认白色壁纸
+      const known = saved.wallpaper === 'custom' || WALLPAPERS.some((w) => w.id === saved.wallpaper)
+      theme.wallpaper = known ? saved.wallpaper : 'pearl'
+    }
     if (typeof saved.customImage === 'string') theme.customImage = saved.customImage
     if (typeof saved.iconStyle === 'string') theme.iconStyle = saved.iconStyle
     if (typeof saved.widgetGlass === 'boolean') theme.widgetGlass = saved.widgetGlass
@@ -229,6 +207,17 @@ loadValue('theme').then((saved) => {
 )
 
 // 应用主题设置
+// 默认桌面样式：重置桌面时恢复到这组值
+export const DEFAULT_DESKTOP_THEME = {
+  wallpaper: 'pearl',
+  iconStyle: 'default',
+  customImage: '',
+  customIcons: {},
+  widgetGlass: false,
+  iconGlass: false,
+  glassTint: 'clear'
+}
+
 export function applyTheme({ wallpaper, iconStyle, customImage, customIcons, widgetGlass, iconGlass, glassTint }) {
   if (wallpaper !== undefined) theme.wallpaper = wallpaper
   if (iconStyle !== undefined) theme.iconStyle = iconStyle
@@ -237,11 +226,6 @@ export function applyTheme({ wallpaper, iconStyle, customImage, customIcons, wid
   if (widgetGlass !== undefined) theme.widgetGlass = widgetGlass
   if (iconGlass !== undefined) theme.iconGlass = iconGlass
   if (glassTint !== undefined) theme.glassTint = glassTint
-}
-
-// 兼容旧接口
-export function applyThemeConfig(config) {
-  applyTheme(config)
 }
 
 /**

@@ -17,6 +17,12 @@ defineProps({ kind: { type: String, default: 'network' } })
     <g v-else-if="kind === 'folder'">
       <path d="M7 13h15v4h19v22H7z" fill="#806a43"/><path d="M9 11h12v5h18v20H9z" fill="#f3d98e"/><path d="M10 18h30v4H10z" fill="#fff0bc"/><path d="M12 23h30l-5 14H8z" fill="#d8b76e"/><path d="M13 24h26v3H12z" fill="#ffe5a5"/><path d="M20 27h10v2H20z" fill="#9a7d4e"/>
     </g>
+    <g v-else-if="kind === 'globe'">
+      <path d="M14 8h20v4h4v4h3v20h-3v4h-4v4H14v-4h-4v-4H7V16h3v-4h4z" fill="#3e6fa8"/><path d="M16 10h16v4h3v4h2v16h-2v4h-3v3H16v-3h-3v-4h-2V18h2v-4h3z" fill="#8cc4ee"/><path d="M20 14h4v3h-4zM29 17h3v5h-3zM18 27h5v4h-5zM25 30h4v4h-4z" fill="#3e8f5a"/><path d="M14 13h4v3h-4zM11 19h2v3h-2z" fill="#d9f0ff"/>
+    </g>
+    <g v-else-if="kind === 'pointer'">
+      <path d="M12 6h4v4h4v4h4v4h4v4h4v-4h4v4h-4v4h-4v4h-4v4h-4v-4h-4v-4h-4v-4h-4z" fill="#22252e"/><path d="M14 9h2v16h-2zM16 9h8v4h-8zM18 14h6v4h-6zM16 18h6v8h-6zM22 22h4v4h-4zM24 26h4v4h-4z" fill="#ffffff"/>
+    </g>
     <g v-else>
       <path d="M15 8h18v4h5v25h-5v4H15v-4h-5V12h5z" fill="#50526a"/><path d="M15 11h18v26H15zM12 16h24v16H12z" fill="#b9bfcd"/><path d="M19 16h10v15H19z" fill="#6e83a8"/><path d="M21 18h6v4h-6zM21 25h2v4h-2zM25 25h2v4h-2z" fill="#e2f1db"/><path d="M7 20h5v3H7zM36 20h5v3h-5zM19 5h3v6h-3zM27 5h3v6h-3z" fill="#9392a7"/>
     </g>

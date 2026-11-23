@@ -9,31 +9,20 @@ export const WIDGET_SIZES = [
 
 export const widgetCatalog = [
   // 2 × 2
-  { id: 'clock-analog', name: '极简时钟', w: 2, h: 2 },
-  { id: 'date-card', name: '今日', w: 2, h: 2 },
-  { id: 'quote', name: '一句话', w: 2, h: 2 },
-  { id: 'weather', name: '天气', w: 2, h: 2 },
-  { id: 'x-profile', name: 'X 主页', w: 2, h: 2 },
-  { id: 'ig-card', name: 'IG 快照', w: 2, h: 2 },
-  { id: 'stamp', name: '韩系邮票', w: 2, h: 2 },
-  { id: 'couple-day', name: '双人纪念日', w: 2, h: 2 },
+  { id: 'ins-photo-clock', name: 'INS 照片时钟', w: 2, h: 2 },
+  { id: 'ins-status-card', name: 'INS 状态卡', w: 2, h: 2 },
   // 4 × 2
-  { id: 'time-wide', name: '时间横幅', w: 4, h: 2 },
-  { id: 'clock-bold', name: '粗体数字时钟', w: 4, h: 2 },
-  { id: 'music', name: '音乐播放', w: 4, h: 2 },
-  { id: 'music-disc', name: '音乐唱片', w: 2, h: 2 },
-  { id: 'dday', name: '纪念日', w: 4, h: 2 },
-  { id: 'week-strip', name: '本周', w: 4, h: 2 },
-  { id: 'route-line', name: '路程航线', w: 4, h: 2 },
-  { id: 'film-strip', name: '胶片记忆', w: 4, h: 2 },
+  { id: 'ins-quote-photo', name: 'INS 照片文字', w: 4, h: 2 },
+  { id: 'ins-dual-photo', name: 'INS 双照片', w: 4, h: 2 },
+  { id: 'ins-weather-clear', name: 'INS 透明天气', w: 2, h: 2 },
+  { id: 'ins-qr-pay', name: 'INS 扫码付款', w: 2, h: 2 },
+  { id: 'ins-avatar-circle', name: 'INS 圆形头像', w: 2, h: 2 },
+  { id: 'ins-inbox-tip', name: 'INS 信息接收', w: 2, h: 2 },
+  { id: 'ins-daily-copy', name: 'INS 每日文案', w: 4, h: 2 },
+  { id: 'ins-film-clock', name: 'INS 氛围时间', w: 4, h: 2 },
+  { id: 'ins-bw-date', name: 'INS 黑白日期', w: 4, h: 2 },
   // 4 × 4
-  { id: 'calendar', name: '月历', w: 4, h: 4 },
-  { id: 'polaroid', name: '拍立得', w: 4, h: 4 },
-  { id: 'memo', name: '备忘', w: 4, h: 4 },
-  { id: 'profile-card', name: '主页大卡片', w: 4, h: 4 },
-  { id: 'profile-card-clean', name: '无字主页大卡片', w: 4, h: 4 }
+  { id: 'ins-story-note', name: 'INS 照片文案', w: 4, h: 4 },
+  { id: 'ins-memory-album', name: 'INS 回忆相册', w: 4, h: 4 },
+  { id: 'ins-dashboard', name: 'INS 功能面板', w: 4, h: 4 }
 ]
-
-export const sizeKey = (w, h) => `${w}x${h}`
-
-export const getWidget = (id) => widgetCatalog.find((w) => w.id === id)
