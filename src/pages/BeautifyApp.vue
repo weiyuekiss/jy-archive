@@ -151,10 +151,6 @@ function removeFont(font) {
   theme.fonts = theme.fonts.filter((item) => item.id !== font.id)
   for (const appId of Object.keys(theme.fontAssignments)) if (theme.fontAssignments[appId] === font.id) delete theme.fontAssignments[appId]
 }
-function applyZeroPlanet() {
-  fontDraft.value = `@import url("https://fontsapi.zeoseven.com/995/main/result.css");\n\nbody {\n    font-family: "Z Labs RoundPix 12px M CN";\n    font-weight: normal;\n}`
-  fontDialogOpen.value = true
-}
 const activeSize = ref(WIDGET_SIZES[0].key)
 const iconDialog = ref(null)
 const iconUrl = ref('')
@@ -479,7 +475,7 @@ function showToast(text) {
       <div class="group">
         <h2>聊天界面美化</h2>
         <p class="font-help">覆盖聊天顶栏、气泡、输入区、转账与文字图等元素。CSS 参考模板可复制或下载。</p>
-        <div class="beautify-actions"><button type="button" @click="applyZeroPlanet">零点行星字体 CSS</button><button type="button" @click="openCssEditor">编辑自定义 CSS</button></div>
+        <div class="beautify-actions"><button type="button" @click="openCssEditor">编辑自定义 CSS</button></div>
         <div class="beautify-actions selector-actions"><button type="button" @click="copySelectors">复制完整选择器</button><button type="button" @click="downloadSelectors">下载 CSS 模板</button></div>
         <div class="chat-style-preview" :style="chatPreviewStyle"><span class="preview-bubble">你好，今天也要保持好心情。</span><span class="preview-bubble mine">当然！</span><small>聊天界面预览 · {{ theme.chatBeautifyCss ? '已配置样式' : '默认样式' }}</small></div>
         <button v-if="theme.chatBeautifyCss" class="manage-css" type="button" @click="clearBeautifyCss">移除当前聊天美化</button>

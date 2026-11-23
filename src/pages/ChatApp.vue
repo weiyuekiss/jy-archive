@@ -1575,6 +1575,17 @@ const friendQuery = ref('')
 const selectedFriend = ref(null)
 const friendIds = ref({})
 const contacts = ref([])
+// 好友状态：删除记录（id → 删除时间）、申请列表、申请面板开关
+const friendRemovedAt = ref({})
+const friendRequests = ref([])
+const friendRequestPanelOpen = ref(false)
+const friendDeleteConfirmOpen = ref(false)
+// 点赞者显示名：优先用记录的名字，角色从角色库取名，其余显示“访客”
+function likerName(like) {
+  if (like.name) return like.name
+  if (like.authorType === 'character') return contacts.value.find((person) => person.id === like.id)?.name || '角色'
+  return '访客'
+}
 const tabs = ['聊天', '朋友圈', '我的']
 const sections = ref([{ title: '我的人物', open: true, chats: [] }])
 const recentChats = computed(() => sections.value.flatMap((section) => section.chats).slice(0, 8))
@@ -1598,9 +1609,14 @@ function onCharactersUpdated() {
 
 onBeforeUnmount(() => window.removeEventListener('jyos-characters-updated', onCharactersUpdated))
 
+onBeforeUnmount(() => clearInterval(activityStatusTimer))
+
 onMounted(async () => {
-  activityStatusTimer = setInterval(checkActivityStatuses, 60000)
-  const [savedCharacters, savedChats, savedChatConfig, savedMessages, savedPreferences, savedCharacterSettings, savedMoments, savedMomentSettings, savedLongTermMemories] = await Promise.all([loadValue('jyos_characters'), loadValue('jyos_chat_contacts'), loadValue('jyos_chat_config'), loadValue('jyos_chat_messages'), loadValue('jyos_chat_preferences'), loadValue('jyos_character_chat_settings'), loadValue('jyos_moments'), loadValue('jyos_moments_settings'), loadValue('jyos_long_term_memories')])
+  activityStatusTimer = setInterval(() => {
+    checkActivityStatuses()
+    checkFriendRequests()
+  }, 60000)
+  const [savedCharacters, savedChats, savedChatConfig, savedMessages, savedPreferences, savedCharacterSettings, savedMoments, savedMomentSettings, savedLongTermMemories, savedFriendRemovedAt, savedFriendRequests] = await Promise.all([loadValue('jyos_characters'), loadValue('jyos_chat_contacts'), loadValue('jyos_chat_config'), loadValue('jyos_chat_messages'), loadValue('jyos_chat_preferences'), loadValue('jyos_character_chat_settings'), loadValue('jyos_moments'), loadValue('jyos_moments_settings'), loadValue('jyos_long_term_memories'), loadValue('jyos_friend_removed_at'), loadValue('jyos_friend_requests')])
   longTermMemories.value = savedLongTermMemories && typeof savedLongTermMemories === 'object' ? savedLongTermMemories : {}
   momentMemoryCursors.value = await loadValue('jyos_moment_memory_cursors') || {}
   memoryStorageReady.value = true
@@ -1616,7 +1632,8 @@ onMounted(async () => {
     ...post,
     authorType: post.authorType || 'user',
     authorId: post.authorId || 'user',
-    likes: Array.isArray(post.likes) ? post.likes : [],
+    // 旧数据的 likes 是 id 字符串数组，统一转为 { id, name, authorType } 对象
+    likes: Array.isArray(post.likes) ? post.likes.map((like) => (typeof like === 'string' ? { id: like, name: '', authorType: like === 'user' ? 'user' : 'character' } : like)).filter((like) => like && like.id) : [],
     comments: Array.isArray(post.comments) ? post.comments : [],
   })) : []
   const draft = savedMoments?.draft
@@ -1708,6 +1725,8 @@ onMounted(async () => {
   chatConfig.value.preset = normalizeChatPreset({ ...chatConfig.value.preset, id: chatConfig.value.preset.id || DEFAULT_PRESET_ID })
   if (!chatConfig.value.presets?.length) chatConfig.value.presets = [chatConfig.value.preset]
   const selectedIds = Array.isArray(savedChats) ? savedChats : []
+  friendRemovedAt.value = savedFriendRemovedAt && typeof savedFriendRemovedAt === 'object' ? savedFriendRemovedAt : {}
+  friendRequests.value = Array.isArray(savedFriendRequests) ? savedFriendRequests : []
   sections.value[0].chats = contacts.value.filter((person) => selectedIds.includes(person.id)).map((person) => ({
     id: person.id,
     name: person.name,
@@ -1724,6 +1743,8 @@ onMounted(async () => {
 })
 
 watch(() => sections.value[0].chats.map((chat) => chat.id), (ids) => saveValue('jyos_chat_contacts', ids))
+watch(friendRemovedAt, (value) => saveValue('jyos_friend_removed_at', JSON.parse(JSON.stringify(value))), { deep: true })
+watch(friendRequests, (value) => saveValue('jyos_friend_requests', JSON.parse(JSON.stringify(value))), { deep: true })
 watch([enterToSend, replyImmediately, sendSoundEnabled, receiveSoundEnabled], ([enter, immediate, sendSound, receiveSound]) => {
   if (chatPreferencesReady.value) saveValue('jyos_chat_preferences', { enterToSend: enter, replyImmediately: immediate, sendSoundEnabled: sendSound, receiveSoundEnabled: receiveSound })
 })
@@ -1919,7 +1940,10 @@ function toggleMomentLike(post) {
   if (!momentsSettings.value.enabled) return
   const id = chatConfig.value.profileId || 'user'
   const likes = Array.isArray(post.likes) ? [...post.likes] : []
-  post.likes = likes.includes(id) ? likes.filter((like) => like !== id) : [...likes, id]
+  const mine = likes.some((like) => like.id === id)
+  post.likes = mine
+    ? likes.filter((like) => like.id !== id)
+    : [...likes, { id, name: activeUserPersona.value?.name || userProfile.name || '我', authorType: 'user' }]
 }
 function addMomentComment(post, replyTo = null) {
   if (!momentsSettings.value.enabled) return
@@ -1962,7 +1986,7 @@ function parseMomentGeneration(content) {
   if (start < 0 || end <= start) throw new Error('生成结果不是有效 JSON。')
   const parsed = JSON.parse(clean.slice(start, end + 1))
   if (!Array.isArray(parsed.items)) throw new Error('生成结果缺少 items 数组。')
-  return parsed.items.slice(0, 4).map((item) => ({ characterId: String(item?.characterId || ''), characterName: typeof item?.characterName === 'string' ? item.characterName.trim().slice(0, 64) : '', kind: ['post', 'comment', 'reply'].includes(item?.kind) ? item.kind : '', text: typeof item?.text === 'string' ? item.text.trim().slice(0, 500) : '', postId: String(item?.postId || ''), replyTo: item?.replyTo == null ? null : String(item.replyTo), authorName: typeof item?.authorName === 'string' ? item.authorName.trim().slice(0, 32) : '' }))
+  return parsed.items.slice(0, 4).map((item) => ({ characterId: String(item?.characterId || ''), characterName: typeof item?.characterName === 'string' ? item.characterName.trim().slice(0, 64) : '', kind: ['post', 'comment', 'reply'].includes(item?.kind) ? item.kind : '', text: typeof item?.text === 'string' ? item.text.trim().slice(0, 500) : '', postId: String(item?.postId || ''), replyTo: item?.replyTo == null ? null : String(item.replyTo), authorName: typeof item?.authorName === 'string' ? item.authorName.trim().slice(0, 32) : '', likedBy: Array.isArray(item?.likedBy) ? item.likedBy.filter((name) => typeof name === 'string' && name.trim()).map((name) => name.trim().slice(0, 32)).slice(0, 8) : [] }))
 }
 async function generateMomentActivity({ automatic = false, includePosts = momentsSettings.value.characterPosts, includeInteractions = momentsSettings.value.characterInteractions || momentsSettings.value.fictionalVisitors } = {}) {
   if (momentsGeneratingPosts.value || !momentsSettings.value.enabled || (!momentsSettings.value.characterPosts && !momentsSettings.value.characterInteractions && !momentsSettings.value.fictionalVisitors)) return
@@ -2029,7 +2053,7 @@ async function generateMomentActivity({ automatic = false, includePosts = moment
       const character = isVisitor ? null : contacts.value.find((person) => person.id === item.characterId) || contacts.value[0] || null
       if (item.kind === 'post') {
         if (!character) continue
-        momentsPosts.value.unshift({ id: momentId(), authorType: 'character', authorId: character.id, authorName: character.name, authorAvatar: character.avatar || '', source: 'ai', text: item.text, visibility: '公开', createdAt: Date.now(), time: momentTime(), likes: [], comments: [] })
+        momentsPosts.value.unshift({ id: momentId(), authorType: 'character', authorId: character.id, authorName: character.name, authorAvatar: character.avatar || '', source: 'ai', text: item.text, visibility: '公开', createdAt: Date.now(), time: momentTime(), likes: (item.likedBy || []).map((name) => ({ id: `npc-${name}`, name, authorType: 'npc' })), comments: [] })
         continue
       }
       const post = momentsPosts.value.find((entry) => entry.id === item.postId)
@@ -2344,9 +2368,100 @@ function addContact(person) {
   sections.value[0].chats.push({ id: person.id, name: person.name, subtitle: '开始一段新的对话', time: '', unread: 0, color: person.color || '#dededb', avatar: person.avatar || person.name.slice(0, 1), avatarImage: person.avatar || '' })
 }
 
+// 从聊天设置里删除当前好友，关闭设置并回到聊天列表；聊天记录与角色保留
+function confirmDeleteFriend() {
+  if (!activeChat.value) return
+  const person = contacts.value.find((item) => item.id === activeChat.value.id) || { id: activeChat.value.id }
+  removeContact(person)
+  friendDeleteConfirmOpen.value = false
+  chatSettingsOpen.value = false
+  leaveConversation()
+}
+
+// 删除好友：只从聊天列表移除，保留角色、聊天记录与设置；角色之后仍可重新申请加回
 function removeContact(person) {
   sections.value[0].chats = sections.value[0].chats.filter((chat) => chat.id !== person.id)
+  // 记录删除时间，供 AI 主动发起好友申请使用
+  friendRemovedAt.value = { ...friendRemovedAt.value, [person.id]: Date.now() }
 }
+
+// 好友状态：friendRemovedAt 记录已删除的好友（id → 删除时间戳），保存到 IndexedDB
+function isFriend(id) {
+  return sections.value[0].chats.some((chat) => chat.id === id)
+}
+
+// AI 主动发起好友申请：角色被删好友后，调用 API 生成一句申请文案，写入申请列表
+const pendingFriendRequestCalls = new Set()
+async function generateFriendRequest(characterId) {
+  if (pendingFriendRequestCalls.has(characterId)) return
+  const chat = contacts.value.find((person) => person.id === characterId)
+  const preset = getCurrentPreset()
+  if (!chat || !preset?.baseUrl?.trim() || !preset?.model?.trim() || !preset.apiKey?.trim()) return
+  const profile = profileSettings.profiles.find((item) => item.id === chatConfig.value.profileId) || userProfile
+  const recent = (chatMessages.value[characterId] || []).slice(-12)
+  const recentText = recent.map((m) => (m.from === 'me' ? `用户：${m.text || ''}` : `${chat.name}：${m.text || ''}`)).join('\n') || '（暂无对话）'
+  const prompt = [
+    `你要以角色“${chat.name}”的口吻，发一条向用户重新加好友的申请消息。`,
+    `角色设定（仅用于理解人物，不要照抄）：\n${characterToText(chat)}`,
+    `用户资料：\n${profileToText(profile)}`,
+    `最近对话：\n${recentText}`,
+    '要求：一句话，口语，符合角色性格，可以带一点分寸，不要戏剧化，不要提及“设定”“AI”“申请系统”。最多 30 个汉字。',
+    '只返回 JSON 对象：{"text":"…"}，不要代码围栏或其他文字。',
+  ].join('\n\n')
+  pendingFriendRequestCalls.add(characterId)
+  try {
+    const response = await fetch(`${preset.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` },
+      body: JSON.stringify({ model: preset.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+    })
+    if (!response.ok) return
+    const data = await response.json().catch(() => ({}))
+    const raw = data.choices?.[0]?.message?.content
+    if (typeof raw !== 'string') return
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim())
+    const text = typeof parsed.text === 'string' ? parsed.text.trim().slice(0, 30) : ''
+    if (!text) return
+    friendRequests.value = [...friendRequests.value, { id: `fr-${Date.now()}`, characterId, text, status: 'pending', createdAt: Date.now() }]
+  } catch {
+    // 生成失败时静默跳过，下次检查再尝试
+  } finally {
+    pendingFriendRequestCalls.delete(characterId)
+  }
+}
+
+// 每次检查：对已删除好友、且尚无待处理申请的角色，按间隔发起申请
+const FRIEND_REQUEST_DELAY_MS = 10 * 60 * 1000
+function checkFriendRequests() {
+  if (document.hidden) return
+  const now = Date.now()
+  for (const [id, removedAt] of Object.entries(friendRemovedAt.value)) {
+    if (isFriend(id)) continue
+    if (now - removedAt < FRIEND_REQUEST_DELAY_MS) continue
+    const hasPending = friendRequests.value.some((request) => request.characterId === id && request.status === 'pending')
+    if (!hasPending) void generateFriendRequest(id)
+  }
+}
+
+// 申请的显示名、头像统一取自角色库 contacts，不依赖聊天列表条目，避免显示为 id
+function requestCharacter(request) {
+  return contacts.value.find((person) => person.id === request.characterId) || null
+}
+function pendingFriendRequests() {
+  return friendRequests.value.filter((request) => request.status === 'pending' && requestCharacter(request))
+}
+// 通过：把角色加回好友列表，历史消息保持不动
+function acceptFriendRequest(request) {
+  const person = requestCharacter(request)
+  if (person) addContact(person)
+  request.status = 'accepted'
+  delete friendRemovedAt.value[request.characterId]
+}
+// 忽略：标记为已忽略，角色之后仍可再次申请
+function dismissFriendRequest(request) {
+  request.status = 'dismissed'
+}
+
 </script>
 
 <template>
@@ -2373,6 +2488,34 @@ function removeContact(person) {
         <div class="welcome"><button class="chat-list-back-button" type="button" aria-label="返回桌面" @click="emit('close')"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button><strong>Chat</strong></div>
         <div class="recent-chat-strip" aria-label="最近聊天联系人"><button v-for="chat in recentChats" :key="chat.id" type="button" class="recent-chat-avatar" :aria-label="`打开与${chat.name}的聊天`" @click="openChat(chat)"><span class="recent-chat-picture" :class="{ 'avatar-placeholder': !chat.avatarImage }" :style="{ '--avatar-color': chat.color, ...(chat.avatarImage ? { backgroundImage: `url(${chat.avatarImage})` } : {}) }">{{ chat.avatarImage ? '' : (chat.name || '对').slice(0, 1) }}</span><i v-if="chat.online" class="recent-online-dot" :aria-label="`${chat.name}在线`" /><span v-if="activityStatusOf(chat.id)" class="thinking-bubble" aria-hidden="true">{{ activityStatusOf(chat.id).emoji }} {{ activityStatusOf(chat.id).text }}</span></button></div>
         <label class="chat-list-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input v-model="query" type="search" placeholder="搜索联系人或聊天" aria-label="搜索联系人或聊天"/><button v-if="query" type="button" aria-label="清空搜索" @click="query = ''">×</button></label>
+        <button type="button" class="friend-request-entry" :class="{ 'has-pending': pendingFriendRequests().length }" aria-label="好友申请" @click="friendRequestPanelOpen = true">
+          <span>好友申请</span>
+          <b v-if="pendingFriendRequests().length">{{ pendingFriendRequests().length }}</b>
+        </button>
+        <div v-if="friendDeleteConfirmOpen" class="friend-delete-mask" @click.self="friendDeleteConfirmOpen = false">
+          <section class="friend-delete-sheet" role="alertdialog" aria-modal="true" aria-labelledby="friend-delete-title">
+            <h2 id="friend-delete-title">删除好友</h2>
+            <p>将从聊天列表移除。聊天记录会保留，角色之后仍可重新申请加回。</p>
+            <div class="friend-delete-actions">
+              <button type="button" class="friend-delete-cancel" @click="friendDeleteConfirmOpen = false">取消</button>
+              <button type="button" class="friend-delete-ok" @click="confirmDeleteFriend">删除</button>
+            </div>
+          </section>
+        </div>
+        <div v-if="friendRequestPanelOpen" class="friend-request-mask" @click.self="friendRequestPanelOpen = false">
+          <section class="friend-request-sheet" role="dialog" aria-modal="true" aria-label="好友申请">
+            <header><h2>好友申请</h2><button type="button" aria-label="关闭" @click="friendRequestPanelOpen = false">×</button></header>
+            <p v-if="!pendingFriendRequests().length" class="friend-request-empty">暂无待处理的好友申请</p>
+            <ul v-else class="friend-request-list">
+              <li v-for="request in pendingFriendRequests()" :key="request.id">
+                <span class="friend-request-avatar" :class="{ 'avatar-placeholder': !requestCharacter(request).avatar }"><img v-if="requestCharacter(request).avatar" :src="requestCharacter(request).avatar" alt="" /><span v-else>{{ requestCharacter(request).name.slice(0, 1) }}</span></span>
+                <div class="friend-request-copy"><strong>{{ requestCharacter(request).name }}</strong><small>{{ request.text }}</small></div>
+                <button type="button" class="friend-request-ignore" @click="dismissFriendRequest(request)">忽略</button>
+                <button type="button" class="friend-request-accept" @click="acceptFriendRequest(request)">通过</button>
+              </li>
+            </ul>
+          </section>
+        </div>
         <section v-for="section in filteredSections" :key="section.title" class="chat-section">
           <button class="section-toggle" type="button" :aria-expanded="section.open" @click="sections.find((item) => item.title === section.title).open = !section.open"><svg class="chevron" :class="{ folded: !sections.find((item) => item.title === section.title).open }" viewBox="0 0 20 20"><path d="m5 7 5 5 5-5"/></svg><span>{{ section.title }}</span><small>{{ section.chats.length }}</small><svg class="section-end" viewBox="0 0 20 20"><path d="m7 5 5 5-5 5"/></svg></button>
           <div v-if="sections.find((item) => item.title === section.title).open" class="chat-card">
@@ -2391,7 +2534,7 @@ function removeContact(person) {
           <div class="moments-profile"><button class="moments-avatar" type="button" aria-label="更换我的头像" @click.stop="avatarDialogOpen = true"><img v-if="activeUserAvatar" :src="activeUserAvatar" alt="我的头像"/><span v-else>{{ (activeUserPersona.name || '我').slice(0,1) }}</span></button><strong>{{ activeUserPersona.name || '我' }}</strong></div>
         </div>
         <div class="moments-feed">
-          <article v-for="post in momentsPosts" :key="post.id" class="moment-post"><div class="moment-avatar"><img v-if="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" :src="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" alt=""/><span v-else>{{ (post.authorName || activeUserPersona.name || '我').slice(0,1) }}</span></div><div class="moment-body"><strong>{{ post.authorName || activeUserPersona.name || '我' }}</strong><p v-if="post.text">{{ post.text }}</p><p v-if="post.translationVisible && post.translation" class="moment-translation">{{ post.translation }}</p><button v-if="post.authorType === 'character' && post.text" class="moment-translate-button" type="button" :disabled="post.translationLoading" @click="toggleMomentTranslation(post)">{{ post.translationLoading ? '翻译中…' : post.translationVisible ? '收起翻译' : '翻译' }}</button><img v-if="post.image" class="moment-image" :src="post.image" alt="动态图片"/><small>{{ post.time }}</small><div v-if="post.authorType === 'user' || post.authorType === 'character'" class="moment-manage"><button v-if="post.authorType === 'user'" type="button" @click="editMoment(post)">编辑</button><button type="button" @click="deleteMoment(post)">删除</button></div><div class="moment-actions"><button class="moment-like-button" type="button" :disabled="!momentsSettings.enabled" @click="toggleMomentLike(post)"><span class="moment-heart" :class="{ liked: post.likes?.includes(chatConfig.profileId || 'user') }">♥</span>{{ post.likes?.length || 0 }}</button><button class="moment-comment-button" type="button" @click="momentsReplyTargets[post.id] = ''; momentsCommentDialogPostId = post.id">评论</button></div><div v-if="post.comments?.length" class="moment-comments"><div v-for="comment in post.comments" :key="comment.id" class="moment-comment" :class="{ 'moment-comment-reply': comment.replyTo }" role="button" tabindex="0" :aria-label="`回复${comment.authorName || '访客'}的评论`" @click="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.enter.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.space.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id"><span class="moment-comment-avatar"><img v-if="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" :src="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" alt=""/><span v-else>{{ (comment.authorName || '友').slice(0,1) }}</span></span><span class="moment-comment-copy"><strong>{{ comment.authorName || '访客' }}</strong><span><template v-if="comment.replyTo">回复 {{ post.comments.find((item) => item.id === comment.replyTo)?.authorName || '评论' }}：</template>{{ comment.text }}</span><span v-if="comment.translationVisible && comment.translation" class="moment-translation">{{ comment.translation }}</span><button v-if="comment.authorType === 'character' && comment.text" class="moment-translate-button" type="button" :disabled="comment.translationLoading" @click.stop="toggleMomentTranslation(comment)">{{ comment.translationLoading ? '翻译中…' : comment.translationVisible ? '收起翻译' : '翻译' }}</button></span></div></div></div></article>
+          <article v-for="post in momentsPosts" :key="post.id" class="moment-post"><div class="moment-avatar"><img v-if="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" :src="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" alt=""/><span v-else>{{ (post.authorName || activeUserPersona.name || '我').slice(0,1) }}</span></div><div class="moment-body"><strong>{{ post.authorName || activeUserPersona.name || '我' }}</strong><p v-if="post.text">{{ post.text }}</p><p v-if="post.translationVisible && post.translation" class="moment-translation">{{ post.translation }}</p><button v-if="post.authorType === 'character' && post.text" class="moment-translate-button" type="button" :disabled="post.translationLoading" @click="toggleMomentTranslation(post)">{{ post.translationLoading ? '翻译中…' : post.translationVisible ? '收起翻译' : '翻译' }}</button><img v-if="post.image" class="moment-image" :src="post.image" alt="动态图片"/><small>{{ post.time }}</small><div v-if="post.authorType === 'user' || post.authorType === 'character'" class="moment-manage"><button v-if="post.authorType === 'user'" type="button" class="moment-edit-button" @click="editMoment(post)">编辑</button><button type="button" class="moment-trash-button" aria-label="删除动态" title="删除动态" @click="deleteMoment(post)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div><div class="moment-actions"><span class="moment-like-group"><button class="moment-like-button" type="button" :disabled="!momentsSettings.enabled" aria-label="点赞" @click="toggleMomentLike(post)"><span class="moment-heart" :class="{ liked: post.likes?.some((like) => like.id === (chatConfig.profileId || 'user')) }">♥</span></button></span><button class="moment-comment-button" type="button" @click="momentsReplyTargets[post.id] = ''; momentsCommentDialogPostId = post.id">评论</button></div><div v-if="post.likes?.length" class="moment-likes-inline"><span class="moment-likes-heart" aria-hidden="true">♥</span><span>{{ post.likes.map(likerName).join('，') }}</span></div><div v-if="post.comments?.length" class="moment-comments"><div v-for="comment in post.comments" :key="comment.id" class="moment-comment" :class="{ 'moment-comment-reply': comment.replyTo }" role="button" tabindex="0" :aria-label="`回复${comment.authorName || '访客'}的评论`" @click="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.enter.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.space.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id"><span class="moment-comment-avatar"><img v-if="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" :src="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" alt=""/><span v-else>{{ (comment.authorName || '友').slice(0,1) }}</span></span><span class="moment-comment-copy"><strong>{{ comment.authorName || '访客' }}</strong><span><template v-if="comment.replyTo">回复 {{ post.comments.find((item) => item.id === comment.replyTo)?.authorName || '评论' }}：</template>{{ comment.text }}</span><span v-if="comment.translationVisible && comment.translation" class="moment-translation">{{ comment.translation }}</span><button v-if="comment.authorType === 'character' && comment.text" class="moment-translate-button" type="button" :disabled="comment.translationLoading" @click.stop="toggleMomentTranslation(comment)">{{ comment.translationLoading ? '翻译中…' : comment.translationVisible ? '收起翻译' : '翻译' }}</button></span></div></div></div></article>
           <p v-if="!momentsPosts.length" class="moments-empty">记录生活里的小事，让此刻留有回响。</p>
         </div>
         <div v-if="momentsCommentDialogPostId && momentsSettings.enabled" class="moment-comment-dialog-backdrop" @click.self="momentsCommentDialogPostId = ''"><section class="moment-comment-dialog" role="dialog" aria-modal="true" aria-label="写评论"><header><strong>{{ momentsReplyTargets[momentsCommentDialogPostId] ? '回复评论' : '写评论' }}</strong><button type="button" aria-label="关闭" @click="momentsCommentDialogPostId = ''">×</button></header><form class="moment-comment-dialog-form" @submit.prevent="addMomentComment(momentsPosts.find((post) => post.id === momentsCommentDialogPostId), momentsReplyTargets[momentsCommentDialogPostId] || null)"><textarea v-model="momentsCommentDrafts[`${momentsCommentDialogPostId}:${momentsReplyTargets[momentsCommentDialogPostId] || ''}`]" maxlength="1000" autofocus :placeholder="momentsReplyTargets[momentsCommentDialogPostId] ? '回复这条评论…' : '写下你的评论…'"></textarea><button type="submit" :disabled="!momentsCommentDrafts[`${momentsCommentDialogPostId}:${momentsReplyTargets[momentsCommentDialogPostId] || ''}`]?.trim()">发送</button></form></section></div>
@@ -2587,6 +2730,9 @@ function removeContact(person) {
           </section>
           <button type="button" class="chat-setting-card history-action-row history-clear-row" @click="openHistoryAction('clear')">
             <span class="history-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg></span><span>清除聊天记录</span>
+          </button>
+          <button type="button" class="chat-setting-card history-action-row history-delete-friend-row" @click="friendDeleteConfirmOpen = true" :disabled="!isFriend(activeChat.id)">
+            <span class="history-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20a7 7 0 0 1 11-5.7M17 11l5 5m0-5-5 5"/></svg></span><span>删除好友</span>
           </button>
           <button type="button" class="chat-setting-card history-action-row history-restart-row" @click="openHistoryAction('restart')">
             <span class="history-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4.9 9A7.5 7.5 0 0 1 18 6l2 6M4 17v-5h5m10.1 3A7.5 7.5 0 0 1 6 18l-2-6"/></svg></span><span>重启这段聊天</span>
@@ -2863,7 +3009,247 @@ function removeContact(person) {
 .chat-app{--ink:#202733;--soft:#788394;--brand:#5278bd;--surface:#fff;position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;overflow:hidden;padding:env(safe-area-inset-top) 0 0;color:var(--ink);font-family:"Source Han Sans SC","思源黑体","Noto Sans SC",sans-serif;font-weight:400}.chat-app:has(.moments-page){padding-top:0}.chat-app:has(.moments-page)>.topbar{top:0}.chat-app:has(.moments-page)>.chat-content{padding-top:0}.chat-app button,.chat-app input{font:inherit}.topbar{height:58px;flex:none;display:flex;align-items:center;gap:12px;padding:0 22px}.topbar-title{flex:1;color:#202733;font-size:18px;font-weight:650;letter-spacing:.01em}.back-button{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;color:#454e5b;background:transparent}.back-button svg{width:20px;fill:none;stroke:currentColor;stroke-width:1.8}.round-action{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;color:#485568;background:#fff}.round-action svg{width:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}.chat-content{width:min(100%,620px);flex:1;min-height:0;overflow:auto;margin:0 auto;padding:12px 20px 16px;scrollbar-width:thin;scrollbar-color:#d5dbe4 transparent}.welcome{margin:10px 0 18px}.welcome strong{color:#202733}.welcome>span{color:#8993a1;font-size:12px}.chat-list-search{display:flex;align-items:center;gap:10px;margin:0 0 22px;transition:border-color .18s,box-shadow .18s}.chat-list-search:focus-within{border-color:#a9bfdf;box-shadow:0 0 0 3px #5278bd12}.chat-list-search svg{width:18px;flex:none;fill:none;stroke:#8993a1;stroke-width:1.7}.chat-list-search input{min-width:0;flex:1;border:0;outline:0;color:#263143;background:transparent;font-size:13px}.chat-list-search input::placeholder{color:#a0a8b4}.chat-list-search button{width:24px;height:24px;border:0;border-radius:50%;color:#7d8795;background:#eef1f5;font-size:18px;line-height:1}.section-toggle{width:100%;display:flex;align-items:center;gap:8px;padding:0 2px;border:0;color:#737f8f;background:transparent;text-align:left;font-size:13px;font-weight:600;cursor:pointer}.section-toggle>svg{width:15px;fill:none;stroke:#909baa;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.section-toggle .chevron{transition:transform .18s}.section-toggle .chevron.folded{transform:rotate(-90deg)}.section-toggle small{color:#a2aab5;font-size:11px}.section-toggle .section-end{display:none}.chat-card{overflow:hidden}.conversation{width:100%;display:flex;align-items:center;border:0;border-bottom:1px solid #f0f2f5;text-align:left;cursor:pointer;transition:background .16s}.conversation:last-child{border-bottom:0}.avatar{position:relative;flex:none;display:grid;place-items:center;border:1px solid #e9ecf1;border-radius:50%;background:linear-gradient(145deg,#f7f8fa,var(--avatar-color))}.avatar>span{color:#59677b;font-family:"PingFang SC",sans-serif;font-size:17px;font-weight:550}.avatar>img,.contact-avatar img{width:100%;height:100%;position:absolute;inset:0;border-radius:50%;object-fit:cover}.online-dot{position:absolute;right:0;bottom:0;width:12px;height:12px;border:2px solid #fff;border-radius:50%;background:#48b980}.group-mark{position:absolute;right:-2px;bottom:0;width:17px;height:17px;display:grid;place-items:center;border:2px solid white;border-radius:50%;color:#fff;background:#78879a;font-size:7px;font-style:normal}.conversation-copy{min-width:0;flex:1;display:flex;flex-direction:column}.conversation-top,.conversation-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px}.conversation-top strong{overflow:hidden;color:#252e3b;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.conversation-top time{flex:none;color:#9aa3af;font-size:10px;font-variant-numeric:tabular-nums}.conversation-bottom>span{color:#858f9d}.unread-count{min-width:19px;height:19px;flex:none;display:grid;place-items:center;padding:0 5px;border-radius:11px;color:white;background:#557fc5;font-size:10px;font-style:normal;font-variant-numeric:tabular-nums}.no-results{padding:30px 12px;color:#858f9d;text-align:center;font-size:13px}.empty-tab{min-height:50vh;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#4c5665;text-align:center}.empty-icon,.profile-avatar{width:65px;height:65px;display:grid;place-items:center;margin-bottom:16px;border-radius:50%;color:#5278bd;background:#eaf0fa;font-size:23px}.profile-avatar{font-family:Georgia,serif;font-size:20px}.empty-tab h1{margin:0;font-size:22px;font-weight:600}.empty-tab p{margin:8px 0 16px;color:#999a9d;font-size:12px}.empty-action{padding:9px 17px;border:0;border-radius:20px;color:#626367;background:#ffffffd9;font-size:11px}.my-page{min-height:100%;padding:8px 2px 30px;color:#45464a}.my-heading{padding:14px 5px 24px}.my-heading>span,.preference-label{color:#b0aaa3;font-size:9px;letter-spacing:.18em}.my-heading h1{margin:8px 0 5px;color:#424348;font-size:32px;font-weight:650;letter-spacing:-1px}.my-heading p{color:#a3a1a0;font-size:12px}.my-profile-avatar{font-family:Georgia,serif}.profile-sparkle{margin-left:auto;color:#c4b9aa;font-size:18px}.preference-label{display:flex;align-items:center;gap:9px;margin:27px 6px 11px}.preference-label span{color:#8f8d8a;font-size:11px;letter-spacing:0}.preference-card{padding:3px 16px 13px;border-radius:24px}.preference-row{width:100%;min-height:69px;display:flex;align-items:center;gap:12px;border:0;background:transparent;text-align:left;cursor:pointer}.sound-setting-row{position:relative}.sound-toggle{flex:none}.sound-action{flex:none;padding:6px 10px;border:1px solid #34b85a;border-radius:15px;color:#fff;background:#34b85a;font-size:9px;font-weight:600;box-shadow:0 2px 7px #34b85a30}.sound-file-input{display:none}
 .preference-icon{width:26px;height:26px;flex:none;display:grid;place-items:center;color:#4d5b6e;font-size:18px;background:none;border-radius:0}.preference-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.preference-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.preference-copy strong{color:#45464a;font-size:12px;font-weight:600}.preference-copy small{color:#686a6d;font-size:10px}.toggle-pill{width:39px;height:23px;position:relative;flex:none;padding:0;border:0;border-radius:20px;appearance:none;-webkit-appearance:none;background:#e5e3df;transition:background .2s}.toggle-pill:focus-visible{outline:2px solid #9bbda2;outline-offset:2px}.toggle-pill i{width:17px;height:17px;position:absolute;top:3px;left:3px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #5552;transition:transform .2s}.toggle-pill.on{background:#34c759}.toggle-pill.on i{transform:translateX(16px)}.preference-divider{height:1px;margin:0 0 10px 46px;background:#f0efed}.preference-note{display:flex;align-items:center;gap:7px;padding-left:46px;color:#aaa7a3;font-size:9px}.preference-note span{color:#c1b7a9}.my-footer-note{margin:26px 0 0;color:#c3bdb5;text-align:center;font-family:Georgia,serif;font-size:10px;letter-spacing:.06em}.my-config-tools{display:flex;flex-direction:column;gap:0;margin:20px 0 0;padding:3px 16px 13px}.my-config-tools .preference-row{min-height:69px;padding:0;border-bottom:1px solid #f0efed}.my-config-tools .preference-row:last-child{border-bottom:0}.my-config-tools .preference-icon{color:#4d5b6e;background:none}.my-config-tools .preference-copy strong{color:#45464a;font-size:12px;font-weight:600}.my-config-tools .preference-copy small{color:#686a6d;font-size:10px}.config-entry-chevron{flex:none;padding:0 4px;color:#9b9b9c;font-size:25px;font-weight:300;line-height:1}
 .config-sheet{width:min(100%,520px);height:min(82vh,680px);display:flex;flex-direction:column;overflow:hidden;padding:19px 20px 16px;border:1px solid #ffffffd9;border-radius:29px;background:#f5f4f1;box-shadow:0 24px 80px #25252525}.history-actions{display:flex;flex-direction:column;gap:8px}.history-action{display:flex;flex-direction:column;gap:5px;padding:12px 13px;border:1px solid #efede8;border-radius:16px;background:#faf9f7;text-align:left;cursor:pointer}.history-action strong{color:#68645d;font-size:11px;font-weight:600}.history-action span{color:#aaa49b;font-size:9px;line-height:1.5}.history-action.restart strong{color:#ad7770}.history-confirm-overlay{background:#00000026;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}.history-confirm-dialog{border-color:#f0f0f0;background:#fff;box-shadow:0 18px 55px #00000024;backdrop-filter:none;-webkit-backdrop-filter:none}.history-confirm-dialog h3{color:#343538}.history-confirm-dialog p{margin:0;color:#77797d;font-size:12px;line-height:1.65}.history-confirm-dialog footer button{color:#55575b;background:#ededee}.history-confirm-dialog .history-confirm-delete{color:#55575b;background:#e5e5e7}
-.chat-settings-page{position:fixed;inset:0;z-index:38;width:100vw;height:100vh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;padding:0;color:#424348;background:#f4f5f6}.chat-settings-header{width:min(620px,100vw);height:calc(48px + env(safe-area-inset-top));box-sizing:border-box;position:relative;z-index:1;display:grid;grid-template-columns:42px 1fr 42px;align-items:end;flex:none;margin:0 auto;padding:0 0 calc(env(safe-area-inset-top) - 4px);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:#ffffff76}.chat-settings-header>button{width:38px;height:38px;display:grid;place-items:center;transform:translateY(28px);border:0;border-radius:0;color:#5d5e60;background:transparent;font-size:27px;line-height:1;cursor:pointer}.chat-settings-header>div{text-align:center;transform:translateY(28px)}.chat-settings-header>i{transform:translateY(28px)}.chat-settings-header>span{color:#b0aaa3;font-size:8px;letter-spacing:.18em}.chat-settings-header h2{margin:0;color:#55565a;font-size:16px;font-weight:550;letter-spacing:.04em}.chat-settings-header>i{width:38px}.chat-settings-scroll{width:min(620px,100vw);min-height:0;flex:1;overflow:auto;margin:calc(-1 * (48px + env(safe-area-inset-top))) auto 0;padding:calc(48px + env(safe-area-inset-top)) 22px calc(env(safe-area-inset-bottom) + 18px);scrollbar-width:none;scrollbar-color:transparent transparent}.chat-settings-section-title{display:flex;align-items:center;gap:9px;margin:17px 5px 11px;color:#b0aaa3;font-size:9px;letter-spacing:.17em}.chat-settings-section-title span{color:#8f8d8a;font-size:11px;letter-spacing:0}.chat-setting-card{min-height:78px;display:flex;align-items:center;gap:13px;margin-bottom:10px;padding:13px 15px;border:1px solid #ffffffd9;border-radius:25px;background:linear-gradient(135deg,#ffffffd9,#f8f8f6c9);box-shadow:0 7px 22px #5e5a4d0b;backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2)}.chat-setting-icon{width:40px;height:40px;flex:none;display:grid;place-items:center;border-radius:15px;color:#fff;background:#85898e;font-size:20px;box-shadow:none}.chat-setting-icon svg{width:20px;height:20px;fill:currentColor;stroke:none}.memory-icon,.couple-icon,.status-icon,.history-icon,.image-setting-card .image-icon,.image-quality-icon{color:#fff!important;background:#85898e!important}.history-icon{color:#dd8075;background:#fff0ed}.chat-setting-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.chat-setting-copy strong{color:#55565a;font-size:12px;font-weight:650}.chat-setting-copy small{color:#9b9b9c;font-size:10px;line-height:1.5}.remark-setting-card .chat-setting-copy{align-items:stretch}.chat-remark-input{width:100%;height:36px;box-sizing:border-box;margin-top:5px;padding:0 11px;border:1px solid #e8e7e3;border-radius:12px;outline:0;color:#55565a;background:#f8f8f6;box-shadow:inset 0 1px 3px #55555508;font:inherit;font-size:11px;transition:border-color .18s,box-shadow .18s,background .18s}.chat-remark-input::placeholder{color:#b3b2ae}.chat-remark-input:focus{border-color:#b8d7c0;background:#fff;box-shadow:0 0 0 3px #7bc88b1c}.memory-setting-card .memory-input-wrap{width:91px;height:36px;flex:none;gap:4px;padding:0 9px;border-radius:15px;background:#f5f5f3}.memory-input-wrap input{width:100%;min-width:0;border:0;outline:0;color:#595a5d;background:transparent;font:inherit;font-size:13px}.memory-input-wrap span{flex:none;color:#97989a;font-size:10px}.image-setting-card .image-icon{color:#6f9dcb;background:#edf5ff}.image-quality-setting-card{align-items:flex-start}.image-quality-icon{color:#9b85c8;background:#f3efff}.image-quality-setting-card select{width:100%;height:34px;margin-top:4px;padding:0 9px;border:1px solid #e8e7e3;border-radius:11px;outline:0;color:#68696c;background:#fff;font:inherit;font-size:11px}.hidden-image-input{display:none}.image-message-card{display:block;width:min(280px,100%);padding:0;border:0;border-radius:13px;overflow:hidden;background:#f2f2f2;cursor:zoom-in}.image-preview-overlay{align-items:center}.image-preview-close{position:absolute;top:calc(env(safe-area-inset-top) + 18px);right:18px;width:36px;height:36px;border:0;border-radius:50%;color:#555;background:#fff;font-size:25px;line-height:1;cursor:pointer}.image-preview-dialog{max-width:min(94vw,700px);max-height:90vh;padding:8px;border-radius:18px;background:#fff}.image-preview-dialog img{display:block;max-width:100%;max-height:82vh;object-fit:contain;border-radius:12px}.toggle-switch{width:43px;height:26px;position:relative;flex:none;padding:0;border:0;border-radius:16px;background:#e7e7e5;cursor:pointer;transition:background .2s}.toggle-switch i{width:20px;height:20px;position:absolute;top:3px;left:3px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #5552;transition:transform .2s}.toggle-switch.on{background:#34c759}.toggle-switch.on i{transform:translateX(17px)}.history-setting-card{flex-wrap:wrap}.history-setting-card .chat-setting-copy{flex-basis:calc(100% - 60px)}.settings-row-action{padding:7px 12px;border:1px solid #e8e8e6;border-radius:16px;color:#77787a;background:#fff;font-size:10px;cursor:pointer}.settings-row-action.restart-action{color:#c17870}.chat-settings-overlay{z-index:38}.chat-settings-sheet{height:min(62dvh,480px)}.memory-panel{padding:17px}.contacts-overlay{position:fixed;inset:0;z-index:30;display:flex;justify-content:center;align-items:stretch;padding:0 12px;background:#28282a38;backdrop-filter:blur(8px)}.contacts-page{width:min(100%,560px);display:flex;flex-direction:column;margin:auto;max-height:min(90dvh,760px);padding:19px 20px 16px;border:1px solid #ffffffd9;border-radius:28px;background:#f5f4f2;box-shadow:0 24px 80px #25252525}.contacts-header{display:grid;grid-template-columns:40px 1fr 40px;align-items:center}.contacts-header>button{width:34px;height:34px;border:0;border-radius:50%;color:#76777a;background:#ffffffc9;font-size:27px;line-height:1;cursor:pointer}.contacts-header>div{text-align:center}.contacts-header>div>span{color:#aaa9a5;font-size:8px;letter-spacing:.18em}.contacts-header h2{margin:3px 0 0;color:#4c4d50;font-size:19px;font-weight:600}.contacts-header>i{width:34px}.contacts-intro{margin:16px 0 13px;color:#929294;text-align:center;font-size:11px}.contact-search{height:46px;flex:none;margin-bottom:10px;border-color:#fff;border-radius:25px;background:#fff}.contact-results{flex:1;min-height:100px;overflow:auto}.contact-row{width:100%;min-height:68px;display:flex;align-items:center;gap:11px;padding:8px 3px;border:0;border-bottom:1px solid #e8e7e4;background:transparent;text-align:left;cursor:pointer}.contact-avatar{width:45px;height:45px;position:relative;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:50%;color:#696a6c;background:linear-gradient(145deg,#fff,var(--avatar-color));font-family:Georgia,serif;font-size:16px}.contact-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}.contact-copy strong{overflow:hidden;color:#4c4d50;font-size:12px;font-weight:550;text-overflow:ellipsis;white-space:nowrap}.contact-copy small{overflow:hidden;color:#a2a2a3;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.contact-add{padding:6px 10px;border:1px solid #e1dfda;border-radius:18px;color:#767772;background:#ffffffa8;font-size:9px;white-space:nowrap}.contact-add.added{border-color:#e8e7e4;color:#aaa9a5;background:transparent}.contacts-empty{min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#858589;text-align:center}.contacts-empty>span{width:42px;height:42px;display:grid;place-items:center;margin-bottom:10px;border-radius:50%;color:#aaa99e;background:#ffffffc9;font-size:18px}.contacts-empty strong{font-size:12px;font-weight:550}.contacts-empty p{max-width:240px;margin:6px 0;color:#a3a3a4;font-size:10px;line-height:1.6}.contacts-done{height:40px;flex:none;margin-top:12px;border:0;border-radius:22px;color:#5d5e60;background:#e6e5e2;font-size:11px;cursor:pointer}.contacts-fade-enter-active,.contacts-fade-leave-active{transition:opacity .2s,transform .2s}.contacts-fade-enter-from,.contacts-fade-leave-to{opacity:0;transform:translateY(8px)}.bottom-area{flex:none}.bottom-tools{display:flex;align-items:center;gap:12px;margin-bottom:8px}.news-search{height:62px;min-width:0;flex:1;display:flex;align-items:center;gap:15px;padding:0 20px;border:1px solid #ffffff;border-radius:36px;color:#696a6d;background:#ffffffd9;box-shadow:0 8px 25px #3333330a;text-align:left;cursor:pointer}.news-search svg{width:25px;height:25px;flex:none;fill:none;stroke:#333438;stroke-width:1.8;stroke-linecap:round}.news-search span{font-size:15px}.compose-fab{width:62px;height:62px;flex:none;display:grid;place-items:center;border:1px solid #ffffff;border-radius:50%;color:#52545a;background:#ffffffdf;box-shadow:0 8px 25px #3333330a;cursor:pointer}.compose-fab svg{width:27px;fill:currentColor;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}.compose-fab svg path:first-child{stroke:none}.bottom-nav{display:grid;grid-template-columns:repeat(3,1fr);align-items:center}.bottom-nav button{cursor:pointer}.conversation-overlay{position:fixed;inset:0;z-index:25;display:flex;justify-content:center}.conversation-page{width:min(100%,620px);height:100%;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 24px) 24px calc(env(safe-area-inset-bottom) + 30px)}.conversation-header{height:96px;position:relative;flex:none;display:flex;align-items:flex-start;justify-content:space-between}.conversation-header .back-button,.dialog-more{width:54px;height:54px;display:grid;place-items:center;border:0;border-radius:50%;color:#08090a;background:#fff;box-shadow:0 8px 28px #0000000d;cursor:pointer}.conversation-header .back-button svg{width:30px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.conversation-identity{position:absolute;left:50%;top:13px;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);z-index:2}.conversation-identity.couple-mode{top:8px;display:grid;grid-template-columns:76px 112px 76px;grid-template-rows:76px auto;column-gap:5px;row-gap:0;justify-items:center;align-items:center}.dialog-avatar{width:94px;height:94px;position:relative;display:grid;place-items:center;overflow:hidden;border-radius:50%;background:#9caecc}.couple-mode .dialog-avatar{width:76px;height:76px}.dialog-avatar img{width:100%;height:100%;position:absolute;inset:0;object-fit:cover}.dialog-avatar>svg{width:100%;height:100%}.couple-avatar{background-color:#e7e3dd;background-image:linear-gradient(145deg,#ede8e1,#d8d8d2);background-position:center;background-size:cover;color:#77736d;font-size:23px}.heartbeat-wave{width:112px;height:64px;display:flex;align-items:center;justify-content:center;gap:3px;grid-column:2;grid-row:1}.heartbeat-wave i{width:3px;height:6px;flex:none;border-radius:3px;background:#171717;transform-origin:center;animation:heartbeat-wave 1.1s cubic-bezier(.36,0,.64,1) infinite}.heartbeat-wave i:nth-child(1),.heartbeat-wave i:nth-child(11){height:5px;animation-delay:.02s}.heartbeat-wave i:nth-child(2),.heartbeat-wave i:nth-child(10){height:10px;animation-delay:.07s}.heartbeat-wave i:nth-child(3),.heartbeat-wave i:nth-child(9){height:17px;animation-delay:.12s}.heartbeat-wave i:nth-child(4),.heartbeat-wave i:nth-child(8){height:27px;animation-delay:.17s}.heartbeat-wave i:nth-child(5),.heartbeat-wave i:nth-child(7){height:40px;animation-delay:.22s}.heartbeat-wave i:nth-child(6){height:52px;animation-delay:.27s}@keyframes heartbeat-wave{0%,100%{transform:scaleY(.24);opacity:.45}50%{transform:scaleY(1);opacity:1}}.couple-mode .character-avatar{grid-column:1;grid-row:1}.couple-mode .couple-avatar{grid-column:3;grid-row:1}.couple-mode .identity-name{grid-column:1 / 4;grid-row:2;margin-top:-2px}.identity-name{position:relative;display:flex;align-items:center;margin-top:-8px;padding:7px 14px 8px 19px;border:1px solid #ffffffd9;outline:0;appearance:none;-webkit-appearance:none;border-radius:30px;color:#08090a;background:linear-gradient(135deg,#ffffffed,#f8f8f8d9);box-shadow:0 5px 22px #0000000a;backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);font-family:inherit;font-size:19px;font-weight:750;white-space:nowrap;cursor:pointer}.identity-name:focus-visible{outline:2px solid #d8d8d8;outline-offset:2px}.identity-name i{margin-left:5px;color:#aeb1b3;font-size:25px;font-style:normal}.dialog-more svg{width:31px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.message-list{flex:1;min-height:0;overflow:auto;padding:111px 0 18px;scrollbar-width:none}.load-older-messages{display:block;margin:0 auto 14px;padding:2px 0;border:0;color:#8d8d91;background:transparent;font:inherit;font-size:11px;line-height:1.3;cursor:pointer}.day-label{display:none}.message-row{width:100%;min-width:0;display:flex;align-items:flex-end;gap:0;margin:0 0 12px}.message-row.them{justify-content:flex-start}.message-row.me{justify-content:flex-end;flex-wrap:wrap}.tiny-avatar{display:none}.message-content-stack{width:88%;max-width:88%;min-width:0;flex:0 1 88%;display:flex;flex-direction:column;align-items:flex-start;gap:7px}.message-row.them .message-content-stack{min-width:0}.message-row.me .message-content-stack{align-items:flex-end}.message-bubble{position:relative;display:block;box-sizing:border-box;width:fit-content;max-width:100%;min-width:0;flex:0 1 auto;margin:0;padding:13px 17px;border-radius:27px;color:#111;background:#e9e9eb;font-family:"Source Han Sans SC","思源黑体","Noto Sans SC",sans-serif;font-size:18px;font-weight:500;line-height:1.4;overflow-wrap:anywhere}.character-status-card{width:min(270px,100%);display:flex;flex-direction:column;gap:9px;padding:11px 13px;border:1px solid #eeece8;border-radius:20px;background:linear-gradient(145deg,#fbfaf8,#f3f1ed);box-shadow:0 5px 16px #71695c0d;animation:status-card-in .2s ease-out}.status-card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:1px;color:#aaa39a;font-size:8px;letter-spacing:.16em}.status-card-heading i{color:#b8ad9d;font-size:12px;font-style:normal}.status-metric{display:grid;grid-template-columns:47px 1fr 24px;align-items:center;gap:8px;color:#817c74;font-size:9px}.status-metric strong{color:#777169;text-align:right;font-size:9px;font-weight:600;font-variant-numeric:tabular-nums}.status-track{height:5px;overflow:hidden;border-radius:8px;background:#e9e6e0}.status-track i{height:100%;display:block;border-radius:inherit;background:#b5bfae;transition:width .35s ease}.status-metric.anger .status-track i{background:#d1b2a9}.status-metric.sadness .status-track i{background:#b2bdc9}@keyframes status-card-in{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}.message-row.them .message-bubble:after,.message-row.me .message-bubble:after{content:"";position:absolute;bottom:-7px;width:17px;height:18px;background:inherit;clip-path:path("M 0 0 C 1 8 4 13 17 18 C 11 13 10 7 10 0 Z");pointer-events:none}.message-row.them.has-tail .message-bubble:after,.message-row.me.has-tail .message-bubble:after{display:block}.message-row.them:not(.has-tail) .message-bubble:after,.message-row.me:not(.has-tail) .message-bubble:after{display:none}.message-row.them .message-bubble:after{left:7px;transform:scaleX(-1)}.message-row.me .message-bubble{border-radius:27px;color:#fff;background:#35a9ed}.message-row.me .message-bubble:after{right:7px}.message-row time{display:none}.message-row.me time{display:block;flex-basis:100%;padding:4px 8px 0 0;color:#8d8d91;text-align:right;font-size:13px;font-weight:600}.message-row.me .delivery-status{display:block;flex-basis:100%;margin-top:-4px;padding-right:8px;color:#99999d;text-align:right;font-size:11px;font-weight:500}/* 聊天译文：气泡内部一行小字入口，展开后的译文显示在气泡下方 */
+.chat-settings-page{position:fixed;inset:0;z-index:38;width:100vw;height:100vh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;padding:0;color:#424348;background:#f4f5f6}.chat-settings-header{width:min(620px,100vw);height:calc(48px + env(safe-area-inset-top));box-sizing:border-box;position:relative;z-index:1;display:grid;grid-template-columns:42px 1fr 42px;align-items:end;flex:none;margin:0 auto;padding:0 0 calc(env(safe-area-inset-top) - 4px);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:#ffffff76}.chat-settings-header>button{width:38px;height:38px;display:grid;place-items:center;transform:translateY(28px);border:0;border-radius:0;color:#5d5e60;background:transparent;font-size:27px;line-height:1;cursor:pointer}.chat-settings-header>div{text-align:center;transform:translateY(28px)}.chat-settings-header>i{transform:translateY(28px)}.chat-settings-header>span{color:#b0aaa3;font-size:8px;letter-spacing:.18em}.chat-settings-header h2{margin:0;color:#55565a;font-size:16px;font-weight:550;letter-spacing:.04em}.chat-settings-header>i{width:38px}.chat-settings-scroll{width:min(620px,100vw);min-height:0;flex:1;overflow:auto;margin:calc(-1 * (48px + env(safe-area-inset-top))) auto 0;padding:calc(48px + env(safe-area-inset-top)) 22px calc(env(safe-area-inset-bottom) + 18px);scrollbar-width:none;scrollbar-color:transparent transparent}.chat-settings-section-title{display:flex;align-items:center;gap:9px;margin:17px 5px 11px;color:#b0aaa3;font-size:9px;letter-spacing:.17em}.chat-settings-section-title span{color:#8f8d8a;font-size:11px;letter-spacing:0}.chat-setting-card{min-height:78px;display:flex;align-items:center;gap:13px;margin-bottom:10px;padding:13px 15px;border:1px solid #ffffffd9;border-radius:25px;background:linear-gradient(135deg,#ffffffd9,#f8f8f6c9);box-shadow:0 7px 22px #5e5a4d0b;backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2)}.chat-setting-icon{width:40px;height:40px;flex:none;display:grid;place-items:center;border-radius:15px;color:#fff;background:#85898e;font-size:20px;box-shadow:none}.chat-setting-icon svg{width:20px;height:20px;fill:currentColor;stroke:none}.memory-icon,.couple-icon,.status-icon,.history-icon,.image-setting-card .image-icon,.image-quality-icon{color:#fff!important;background:#85898e!important}.history-icon{color:#dd8075;background:#fff0ed}.chat-setting-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}.chat-setting-copy strong{color:#55565a;font-size:12px;font-weight:650}.chat-setting-copy small{color:#9b9b9c;font-size:10px;line-height:1.5}.remark-setting-card .chat-setting-copy{align-items:stretch}.chat-remark-input{width:100%;height:36px;box-sizing:border-box;margin-top:5px;padding:0 11px;border:1px solid #e8e7e3;border-radius:12px;outline:0;color:#55565a;background:#f8f8f6;box-shadow:inset 0 1px 3px #55555508;font:inherit;font-size:11px;transition:border-color .18s,box-shadow .18s,background .18s}.chat-remark-input::placeholder{color:#b3b2ae}.chat-remark-input:focus{border-color:#b8d7c0;background:#fff;box-shadow:0 0 0 3px #7bc88b1c}.memory-setting-card .memory-input-wrap{width:91px;height:36px;flex:none;gap:4px;padding:0 9px;border-radius:15px;background:#f5f5f3}.memory-input-wrap input{width:100%;min-width:0;border:0;outline:0;color:#595a5d;background:transparent;font:inherit;font-size:13px}.memory-input-wrap span{flex:none;color:#97989a;font-size:10px}.image-setting-card .image-icon{color:#6f9dcb;background:#edf5ff}.image-quality-setting-card{align-items:flex-start}.image-quality-icon{color:#9b85c8;background:#f3efff}.image-quality-setting-card select{width:100%;height:34px;margin-top:4px;padding:0 9px;border:1px solid #e8e7e3;border-radius:11px;outline:0;color:#68696c;background:#fff;font:inherit;font-size:11px}.hidden-image-input{display:none}.image-message-card{display:block;width:min(280px,100%);padding:0;border:0;border-radius:13px;overflow:hidden;background:#f2f2f2;cursor:zoom-in}.image-preview-overlay{align-items:center}.image-preview-close{position:absolute;top:calc(env(safe-area-inset-top) + 18px);right:18px;width:36px;height:36px;border:0;border-radius:50%;color:#555;background:#fff;font-size:25px;line-height:1;cursor:pointer}.image-preview-dialog{max-width:min(94vw,700px);max-height:90vh;padding:8px;border-radius:18px;background:#fff}.image-preview-dialog img{display:block;max-width:100%;max-height:82vh;object-fit:contain;border-radius:12px}.toggle-switch{width:43px;height:26px;position:relative;flex:none;padding:0;border:0;border-radius:16px;background:#e7e7e5;cursor:pointer;transition:background .2s}.toggle-switch i{width:20px;height:20px;position:absolute;top:3px;left:3px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #5552;transition:transform .2s}.toggle-switch.on{background:#34c759}.toggle-switch.on i{transform:translateX(17px)}.history-setting-card{flex-wrap:wrap}.history-setting-card .chat-setting-copy{flex-basis:calc(100% - 60px)}.settings-row-action{padding:7px 12px;border:1px solid #e8e8e6;border-radius:16px;color:#77787a;background:#fff;font-size:10px;cursor:pointer}.settings-row-action.restart-action{color:#c17870}.chat-settings-overlay{z-index:38}.chat-settings-sheet{height:min(62dvh,480px)}.memory-panel{padding:17px}.contacts-overlay{position:fixed;inset:0;z-index:30;display:flex;justify-content:center;align-items:stretch;padding:0 12px;background:#28282a38;backdrop-filter:blur(8px)}.contacts-page{width:min(100%,560px);display:flex;flex-direction:column;margin:auto;max-height:min(90dvh,760px);padding:19px 20px 16px;border:1px solid #ffffffd9;border-radius:28px;background:#f5f4f2;box-shadow:0 24px 80px #25252525}.contacts-header{display:grid;grid-template-columns:40px 1fr 40px;align-items:center}.contacts-header>button{width:34px;height:34px;border:0;border-radius:50%;color:#76777a;background:#ffffffc9;font-size:27px;line-height:1;cursor:pointer}.contacts-header>div{text-align:center}.contacts-header>div>span{color:#aaa9a5;font-size:8px;letter-spacing:.18em}.contacts-header h2{margin:3px 0 0;color:#4c4d50;font-size:19px;font-weight:600}.contacts-header>i{width:34px}.contacts-intro{margin:16px 0 13px;color:#929294;text-align:center;font-size:11px}.contact-search{height:46px;flex:none;margin-bottom:10px;border-color:#fff;border-radius:25px;background:#fff}.contact-results{flex:1;min-height:100px;overflow:auto}.contact-row{width:100%;min-height:68px;display:flex;align-items:center;gap:11px;padding:8px 3px;border:0;border-bottom:1px solid #e8e7e4;background:transparent;text-align:left;cursor:pointer}.contact-avatar{width:45px;height:45px;position:relative;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:50%;color:#696a6c;background:linear-gradient(145deg,#fff,var(--avatar-color));font-family:Georgia,serif;font-size:16px}.contact-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}.contact-copy strong{overflow:hidden;color:#4c4d50;font-size:12px;font-weight:550;text-overflow:ellipsis;white-space:nowrap}.contact-copy small{overflow:hidden;color:#a2a2a3;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.contact-add{padding:6px 10px;border:1px solid #e1dfda;border-radius:18px;color:#767772;background:#ffffffa8;font-size:9px;white-space:nowrap}.contact-add.added{border-color:#e8e7e4;color:#aaa9a5;background:transparent}.contacts-empty{min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#858589;text-align:center}.contacts-empty>span{width:42px;height:42px;display:grid;place-items:center;margin-bottom:10px;border-radius:50%;color:#aaa99e;background:#ffffffc9;font-size:18px}.contacts-empty strong{font-size:12px;font-weight:550}.contacts-empty p{max-width:240px;margin:6px 0;color:#a3a3a4;font-size:10px;line-height:1.6}.contacts-done{height:40px;flex:none;margin-top:12px;border:0;border-radius:22px;color:#5d5e60;background:#e6e5e2;font-size:11px;cursor:pointer}.contacts-fade-enter-active,.contacts-fade-leave-active{transition:opacity .2s,transform .2s}.contacts-fade-enter-from,.contacts-fade-leave-to{opacity:0;transform:translateY(8px)}.bottom-area{flex:none}.bottom-tools{display:flex;align-items:center;gap:12px;margin-bottom:8px}.news-search{height:62px;min-width:0;flex:1;display:flex;align-items:center;gap:15px;padding:0 20px;border:1px solid #ffffff;border-radius:36px;color:#696a6d;background:#ffffffd9;box-shadow:0 8px 25px #3333330a;text-align:left;cursor:pointer}.news-search svg{width:25px;height:25px;flex:none;fill:none;stroke:#333438;stroke-width:1.8;stroke-linecap:round}.news-search span{font-size:15px}.compose-fab{width:62px;height:62px;flex:none;display:grid;place-items:center;border:1px solid #ffffff;border-radius:50%;color:#52545a;background:#ffffffdf;box-shadow:0 8px 25px #3333330a;cursor:pointer}.compose-fab svg{width:27px;fill:currentColor;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}.compose-fab svg path:first-child{stroke:none}.bottom-nav{display:grid;grid-template-columns:repeat(3,1fr);align-items:center}.bottom-nav button{cursor:pointer}.conversation-overlay{position:fixed;inset:0;z-index:25;display:flex;justify-content:center}.conversation-page{width:min(100%,620px);height:100%;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 24px) 24px calc(env(safe-area-inset-bottom) + 30px)}.conversation-header{height:96px;position:relative;flex:none;display:flex;align-items:flex-start;justify-content:space-between}.conversation-header .back-button,.dialog-more{width:54px;height:54px;display:grid;place-items:center;border:0;border-radius:50%;color:#08090a;background:#fff;box-shadow:0 8px 28px #0000000d;cursor:pointer}.conversation-header .back-button svg{width:30px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.conversation-identity{position:absolute;left:50%;top:13px;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);z-index:2}.conversation-identity.couple-mode{top:8px;display:grid;grid-template-columns:76px 112px 76px;grid-template-rows:76px auto;column-gap:5px;row-gap:0;justify-items:center;align-items:center}.dialog-avatar{width:94px;height:94px;position:relative;display:grid;place-items:center;overflow:hidden;border-radius:50%;background:#9caecc}.couple-mode .dialog-avatar{width:76px;height:76px}.dialog-avatar img{width:100%;height:100%;position:absolute;inset:0;object-fit:cover}.dialog-avatar>svg{width:100%;height:100%}.couple-avatar{background-color:#e7e3dd;background-image:linear-gradient(145deg,#ede8e1,#d8d8d2);background-position:center;background-size:cover;color:#77736d;font-size:23px}.heartbeat-wave{width:112px;height:64px;display:flex;align-items:center;justify-content:center;gap:3px;grid-column:2;grid-row:1}.heartbeat-wave i{width:3px;height:6px;flex:none;border-radius:3px;background:#171717;transform-origin:center;animation:heartbeat-wave 1.1s cubic-bezier(.36,0,.64,1) infinite}.heartbeat-wave i:nth-child(1),.heartbeat-wave i:nth-child(11){height:5px;animation-delay:.02s}.heartbeat-wave i:nth-child(2),.heartbeat-wave i:nth-child(10){height:10px;animation-delay:.07s}.heartbeat-wave i:nth-child(3),.heartbeat-wave i:nth-child(9){height:17px;animation-delay:.12s}.heartbeat-wave i:nth-child(4),.heartbeat-wave i:nth-child(8){height:27px;animation-delay:.17s}.heartbeat-wave i:nth-child(5),.heartbeat-wave i:nth-child(7){height:40px;animation-delay:.22s}.heartbeat-wave i:nth-child(6){height:52px;animation-delay:.27s}@keyframes heartbeat-wave{0%,100%{transform:scaleY(.24);opacity:.45}50%{transform:scaleY(1);opacity:1}}.couple-mode .character-avatar{grid-column:1;grid-row:1}.couple-mode .couple-avatar{grid-column:3;grid-row:1}.couple-mode .identity-name{grid-column:1 / 4;grid-row:2;margin-top:-2px}.identity-name{position:relative;display:flex;align-items:center;margin-top:-8px;padding:7px 14px 8px 19px;border:1px solid #ffffffd9;outline:0;appearance:none;-webkit-appearance:none;border-radius:30px;color:#08090a;background:linear-gradient(135deg,#ffffffed,#f8f8f8d9);box-shadow:0 5px 22px #0000000a;backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);font-family:inherit;font-size:19px;font-weight:750;white-space:nowrap;cursor:pointer}.identity-name:focus-visible{outline:2px solid #d8d8d8;outline-offset:2px}.identity-name i{margin-left:5px;color:#aeb1b3;font-size:25px;font-style:normal}.dialog-more svg{width:31px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.message-list{flex:1;min-height:0;overflow:auto;padding:111px 0 18px;scrollbar-width:none}.load-older-messages{display:block;margin:0 auto 14px;padding:2px 0;border:0;color:#8d8d91;background:transparent;font:inherit;font-size:11px;line-height:1.3;cursor:pointer}.day-label{display:none}.message-row{width:100%;min-width:0;display:flex;align-items:flex-end;gap:0;margin:0 0 12px}.message-row.them{justify-content:flex-start}.message-row.me{justify-content:flex-end;flex-wrap:wrap}.tiny-avatar{display:none}.message-content-stack{width:88%;max-width:88%;min-width:0;flex:0 1 88%;display:flex;flex-direction:column;align-items:flex-start;gap:7px}.message-row.them .message-content-stack{min-width:0}.message-row.me .message-content-stack{align-items:flex-end}.message-bubble{position:relative;display:block;box-sizing:border-box;width:fit-content;max-width:100%;min-width:0;flex:0 1 auto;margin:0;padding:13px 17px;border-radius:27px;color:#111;background:#e9e9eb;font-family:"Source Han Sans SC","思源黑体","Noto Sans SC",sans-serif;font-size:18px;font-weight:500;line-height:1.4;overflow-wrap:anywhere}.character-status-card{width:min(270px,100%);display:flex;flex-direction:column;gap:9px;padding:11px 13px;border:1px solid #eeece8;border-radius:20px;background:linear-gradient(145deg,#fbfaf8,#f3f1ed);box-shadow:0 5px 16px #71695c0d;animation:status-card-in .2s ease-out}.status-card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:1px;color:#aaa39a;font-size:8px;letter-spacing:.16em}.status-card-heading i{color:#b8ad9d;font-size:12px;font-style:normal}.status-metric{display:grid;grid-template-columns:47px 1fr 24px;align-items:center;gap:8px;color:#817c74;font-size:9px}.status-metric strong{color:#777169;text-align:right;font-size:9px;font-weight:600;font-variant-numeric:tabular-nums}.status-track{height:5px;overflow:hidden;border-radius:8px;background:#e9e6e0}.status-track i{height:100%;display:block;border-radius:inherit;background:#b5bfae;transition:width .35s ease}.status-metric.anger .status-track i{background:#d1b2a9}.status-metric.sadness .status-track i{background:#b2bdc9}@keyframes status-card-in{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}.message-row.them .message-bubble:after,.message-row.me .message-bubble:after{content:"";position:absolute;bottom:-7px;width:17px;height:18px;background:inherit;clip-path:path("M 0 0 C 1 8 4 13 17 18 C 11 13 10 7 10 0 Z");pointer-events:none}.message-row.them.has-tail .message-bubble:after,.message-row.me.has-tail .message-bubble:after{display:block}.message-row.them:not(.has-tail) .message-bubble:after,.message-row.me:not(.has-tail) .message-bubble:after{display:none}.message-row.them .message-bubble:after{left:7px;transform:scaleX(-1)}.message-row.me .message-bubble{border-radius:27px;color:#fff;background:#35a9ed}.message-row.me .message-bubble:after{right:7px}.message-row time{display:none}.message-row.me time{display:block;flex-basis:100%;padding:4px 8px 0 0;color:#8d8d91;text-align:right;font-size:13px;font-weight:600}.message-row.me .delivery-status{display:block;flex-basis:100%;margin-top:-4px;padding-right:8px;color:#99999d;text-align:right;font-size:11px;font-weight:500}/* 朋友圈动态：白色卡片，细分割，操作栏为图标与数字 */
+.moment-trash-button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #8e8e93;
+  cursor: pointer;
+}
+.moment-trash-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.moment-trash-button:active { background: #f2f2f7; }
+.moment-edit-button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #f2f2f7;
+  color: #1c1c1e;
+  font-size: 12px;
+  cursor: pointer;
+}
+.moment-like-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 动态下方的点赞行：白底灰条，心形与名字用逗号分隔，贴近微信样式 */
+.moment-likes-inline{display:flex;align-items:flex-start;gap:6px;margin:6px 0 0;padding:6px 9px;border-radius:8px;background:#f2f2f7;color:#2f6fd0;font-size:12px;line-height:1.5}
+.moment-likes-heart{flex:none;color:#ff3b30}
+.moment-likes-inline > span:last-child{min-width:0;overflow-wrap:anywhere}
+
+/* 删除好友：确认弹窗，白色 iOS 风格，删除按钮用系统红 */
+.friend-delete-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.24);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.friend-delete-sheet {
+  width: min(100%, 300px);
+  overflow: hidden;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+  color: #1c1c1e;
+  text-align: center;
+}
+.friend-delete-sheet h2 {
+  margin: 0;
+  padding: 22px 20px 6px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.friend-delete-sheet p {
+  margin: 0;
+  padding: 0 20px 20px;
+  color: #8e8e93;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.friend-delete-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 0.5px solid #e5e5ea;
+}
+.friend-delete-actions button {
+  min-height: 50px;
+  border: 0;
+  background: transparent;
+  font-size: 17px;
+  cursor: pointer;
+}
+.friend-delete-cancel { color: #34c759; }
+.friend-delete-ok { color: #ff3b30; font-weight: 600; border-left: 0.5px solid #e5e5ea; }
+
+/* 好友申请：列表顶部入口与弹出面板，白色 iOS 风格，强调色 iOS 绿 */
+.friend-request-entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 46px;
+  margin: 8px 0;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #1c1c1e;
+  font-size: 15px;
+  cursor: pointer;
+}
+.friend-request-entry b {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #34c759;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+}
+.friend-request-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.24);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.friend-request-sheet {
+  width: 100%;
+  max-width: 460px;
+  max-height: 70vh;
+  overflow: auto;
+  margin: 0 10px 12px;
+  padding: 18px 16px 14px;
+  border-radius: 26px;
+  background: #ffffff;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+  color: #1c1c1e;
+}
+.friend-request-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.friend-request-sheet h2 {
+  font-size: 17px;
+  font-weight: 600;
+}
+.friend-request-sheet header button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f2f7;
+  color: #8e8e93;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.friend-request-empty {
+  padding: 24px 0;
+  color: #8e8e93;
+  font-size: 14px;
+  text-align: center;
+}
+.friend-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.friend-request-list li {
+  display: grid;
+  grid-template-columns: 40px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: #f2f2f7;
+}
+.friend-request-avatar {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #e5e5ea;
+  color: #636366;
+  font-size: 16px;
+}
+.friend-request-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.friend-request-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.friend-request-copy strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.friend-request-copy small {
+  overflow: hidden;
+  color: #8e8e93;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-request-ignore,
+.friend-request-accept {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.friend-request-ignore {
+  background: #e5e5ea;
+  color: #1c1c1e;
+}
+.friend-request-accept {
+  background: #34c759;
+  color: #ffffff;
+}
+
+/* 聊天译文：气泡内部一行小字入口，展开后的译文显示在气泡下方 */
 .message-translation-inside {
   display: block;
   margin-top: 6px;
@@ -3055,42 +3441,50 @@ function removeContact(person) {
 /* 朋友圈模板位于多个 scoped style 块中，深层组件选择器确保动态区样式实际命中 DOM。 */
 :deep(.moments-page){color:#343638}
 :deep(.moment-manage){display:flex;gap:10px;margin-top:5px}.moment-manage button{padding:2px 0;border:0;color:#899096;background:transparent;font:inherit;font-size:11px;cursor:pointer}
-:deep(.moment-post){display:flex;align-items:flex-start;gap:12px;padding:17px 0;border-bottom:1px solid #e8e7e4}
-:deep(.moment-avatar){width:42px;height:42px;flex:none;display:grid;place-items:center;overflow:hidden;border:0;border-radius:50%;color:#777;background:#e8e5e0;font-size:14px}
+:deep(.moment-post){display:flex;align-items:flex-start;gap:12px;margin:0 12px 12px;padding:16px;border:0;border-radius:18px;background:#ffffff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+:deep(.moment-avatar){width:40px;height:40px;flex:none;display:grid;place-items:center;overflow:hidden;border:0;border-radius:12px;color:#636366;background:#e5e5ea;font-size:15px;font-weight:600}
 :deep(.moment-avatar img){width:100%;height:100%;object-fit:cover}
-:deep(.moment-body){min-width:0;flex:1;color:#333}
-:deep(.moment-body>strong){color:#50627a;font-size:14px}
-:deep(.moment-body p){margin:7px 0;color:#333;font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
-:deep(.moment-body small){display:block;margin-top:9px;color:#aaa;font-size:11px}
-:deep(.moment-actions){display:flex;align-items:center;justify-content:flex-end;gap:18px;margin-top:10px;padding:2px 0;border-radius:0;background:transparent}
-:deep(.moment-actions button){display:inline-flex;align-items:center;gap:5px;padding:3px 5px;border:0;border-radius:0;color:#899096;background:transparent;font:inherit;font-size:12px;cursor:pointer}
+:deep(.moment-body){min-width:0;flex:1;color:#1c1c1e}
+:deep(.moment-body>strong){display:block;color:#1c1c1e;font-size:15px;font-weight:600;line-height:1.3}
+:deep(.moment-body p){margin:6px 0 0;color:#1c1c1e;font-size:15px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+:deep(.moment-body small){display:block;margin-top:8px;color:#8e8e93;font-size:12px}
+:deep(.moment-actions){display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-top:10px;padding:0;border-radius:0;background:transparent}
+:deep(.moment-actions button){display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border:0;border-radius:8px;color:#8e8e93;background:transparent;font:inherit;font-size:13px;cursor:pointer}
 :deep(.moment-actions button:disabled){opacity:.5;cursor:not-allowed}
+/* 动态卡片修正：删除图标固定在右上角；操作栏收紧；点赞条不超出卡片；翻译字号统一为小字 */
+:deep(.moment-post){position:relative}
+:deep(.moment-manage){position:absolute;top:12px;right:12px;margin:0;gap:2px}
+:deep(.moment-manage button){width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center}
+:deep(.moment-body>strong){padding-right:32px}
+:deep(.moment-actions){gap:6px;justify-content:flex-end;margin-top:8px}
+:deep(.moment-likes-inline){box-sizing:border-box;max-width:100%;margin-top:8px}
+:deep(.moment-body .moment-translate-button){font-size:11px!important;color:#8e8e93!important;margin:4px 0 0;padding:0}
 :deep(.moment-actions button span){color:#9a9da0}
 :deep(.moment-heart){color:#a0a3a6;font-family:Arial,sans-serif;font-size:17px;line-height:1}
-:deep(.moment-heart.liked){color:#6c9876}
+:deep(.moment-heart.liked){color:#ff3b30}
 :deep(.moment-actions button.moment-comment-button){color:#899096}
 :deep(.moment-comments){margin-top:8px;padding:4px 0;border-radius:0;background:transparent;color:#4f6255;font-size:12px;line-height:1.7}
-:deep(.moment-delete-backdrop){position:fixed;inset:0;z-index:98;display:grid;place-items:center;padding:22px;background:rgba(35,42,37,.28);backdrop-filter:blur(7px) saturate(1.08);-webkit-backdrop-filter:blur(7px) saturate(1.08)}
-:deep(.moment-delete-dialog){width:min(100%,360px);box-sizing:border-box;padding:26px 23px 20px;border:1px solid rgba(255,255,255,.92);border-radius:24px;background:linear-gradient(160deg,#fff 0%,#fbfcfb 100%);box-shadow:0 22px 65px rgba(34,46,37,.16),0 3px 12px rgba(34,46,37,.05);text-align:center;animation:moment-delete-in .2s ease-out both}
+:deep(.moment-delete-backdrop){position:fixed;inset:0;z-index:98;display:grid;place-items:center;padding:22px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+:deep(.moment-delete-dialog){width:min(100%,300px);box-sizing:border-box;padding:22px 20px 0;border:0;border-radius:22px;background:#ffffff;box-shadow:0 20px 50px rgba(0,0,0,.18);text-align:center;color:#1c1c1e;overflow:hidden;animation:moment-delete-in .2s ease-out both}
 :deep(.moment-delete-icon){width:44px;height:44px;display:grid;place-items:center;margin:0 auto 14px;border-radius:15px;color:#788c7b;background:#f0f4f0;font-size:23px;line-height:1}
-:deep(.moment-delete-dialog h2){margin:0;color:#303733;font-size:17px;font-weight:650;letter-spacing:.01em}
-:deep(.moment-delete-dialog p){margin:10px 0 23px;color:#788078;font-size:13px;line-height:1.75}
-:deep(.moment-delete-dialog footer){display:flex;gap:10px}
-:deep(.moment-delete-dialog footer button){flex:1;min-height:42px;border-radius:13px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .16s,transform .16s}
-:deep(.moment-delete-cancel){border:1px solid #e9ede9;color:#69736b;background:#f7f9f7}
-:deep(.moment-delete-confirm){border:1px solid #e7ece8;color:#65796a;background:#edf3ee}
-:deep(.moment-delete-dialog footer button:active){transform:scale(.97)}
+:deep(.moment-delete-dialog h2){margin:0;padding:0 0 6px;color:#1c1c1e;font-size:17px;font-weight:600;letter-spacing:0}
+:deep(.moment-delete-dialog p){margin:0;padding:0 0 20px;color:#8e8e93;font-size:13px;line-height:1.45}
+:deep(.moment-delete-dialog footer){display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0 -20px;border-top:.5px solid #e5e5ea}
+:deep(.moment-delete-dialog footer button){min-height:50px;border:0;border-radius:0;background:transparent;font:inherit;font-size:17px;cursor:pointer;transition:background .15s}
+:deep(.moment-delete-cancel){color:#34c759}
+:deep(.moment-delete-confirm){color:#ff3b30;font-weight:600;border-left:.5px solid #e5e5ea}
+:deep(.moment-delete-dialog footer button:active){background:#f2f2f7}
 @keyframes moment-delete-in{from{opacity:0;transform:translateY(7px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){:deep(.moment-delete-dialog){animation:none}}
-:deep(.moment-comment-dialog-backdrop){position:fixed;inset:0;z-index:96;display:grid;place-items:center;padding:20px;background:rgba(20,24,21,.28);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
-:deep(.moment-comment-dialog){width:min(100%,420px);box-sizing:border-box;padding:18px;border:1px solid rgba(255,255,255,.9);border-radius:22px;background:#fff;box-shadow:0 20px 60px rgba(20,30,22,.18)}
-:deep(.moment-comment-dialog header){display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;color:#454746;font-size:15px}
-:deep(.moment-comment-dialog header button){width:30px;height:30px;border:0;border-radius:50%;color:#888;background:#f3f4f3;font-size:22px;line-height:1;cursor:pointer}
+:deep(.moment-comment-dialog-backdrop){position:fixed;inset:0;z-index:96;display:grid;place-items:center;padding:20px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+:deep(.moment-comment-dialog){width:min(100%,420px);box-sizing:border-box;padding:18px 18px 16px;border:0;border-radius:24px;background:#ffffff;box-shadow:0 20px 50px rgba(0,0,0,.16);color:#1c1c1e}
+:deep(.moment-comment-dialog header){display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;color:#1c1c1e;font-size:17px;font-weight:600}
+:deep(.moment-comment-dialog header button){width:30px;height:30px;border:0;border-radius:50%;color:#8e8e93;background:#f2f2f7;font-size:20px;line-height:1;cursor:pointer}
 :deep(.moment-comment-dialog-form){display:flex;flex-direction:column;align-items:flex-end;gap:12px}
-:deep(.moment-comment-dialog-form textarea){width:100%;min-height:110px;box-sizing:border-box;resize:vertical;padding:11px 12px;border:1px solid #e8ebe8;border-radius:13px;outline:0;color:#454746;background:#fafbfa;font:inherit;font-size:14px;line-height:1.55}
-:deep(.moment-comment-dialog-form textarea:focus){border-color:#a9c4ae;box-shadow:0 0 0 3px rgba(103,155,112,.1)}
-:deep(.moment-comment-dialog-form>button){min-width:72px;height:36px;padding:0 16px;border:0;border-radius:18px;color:#fff;background:#68a875;font:inherit;font-size:13px;cursor:pointer}
-:deep(.moment-comment-dialog-form>button:disabled){opacity:.48;cursor:not-allowed}
+:deep(.moment-comment-dialog-form textarea){width:100%;min-height:110px;box-sizing:border-box;resize:vertical;padding:12px 14px;border:0;border-radius:14px;outline:0;color:#1c1c1e;background:#f2f2f7;font:inherit;font-size:16px;line-height:1.5}
+:deep(.moment-comment-dialog-form textarea:focus){box-shadow:0 0 0 2px rgba(52,199,89,.25)}
+:deep(.moment-comment-dialog-form>button){min-width:72px;height:36px;padding:0 18px;border:0;border-radius:999px;color:#fff;background:#34c759;font:inherit;font-size:15px;font-weight:600;cursor:pointer}
+:deep(.moment-comment-dialog-form>button:disabled){background:#e5e5ea;color:#aeaeb2;cursor:not-allowed}
 :deep(.moment-comment){justify-content:space-between}
 :deep(.moment-comment>span){min-width:0;overflow-wrap:anywhere}
 :deep(.moment-comment strong){color:#50627a;font-size:12px}
@@ -3107,7 +3501,7 @@ function removeContact(person) {
 :deep(.moment-comment-copy>span){color:#56625a;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
 :deep(.moment-translate-button){display:inline-flex;margin:4px 0 0;padding:0;border:0;color:#8a929a;background:transparent;font:inherit;font-size:10px;cursor:pointer}
 :deep(.moment-translate-button:disabled){opacity:.55;cursor:default}
-:deep(.moment-translation){display:block;margin-top:3px;color:#788291;font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+:deep(.moment-translation){display:block;margin-top:2px;color:#8e8e93;font-size:10px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
 :deep(.moment-comment .moment-translate-button){align-self:flex-start}
 </style>
 <style scoped>
@@ -3154,7 +3548,7 @@ function removeContact(person) {
 .moments-topbar{position:absolute;top:0;left:0;right:0;z-index:4;background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}.moments-topbar .back-button,.moments-topbar .round-action{color:#343638;background:transparent;box-shadow:none}.moments-topbar{height:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;padding-top:env(safe-area-inset-top)}
 .chat-content>.welcome{width:100%;text-align:left}
 .chat-content>.welcome .chat-list-back-button{align-self:flex-start}
-.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control>small{display:block;margin-top:8px;color:#999;font-size:11px}.moments-page{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;background:rgb(var(--moments-surface-rgb)/.96);padding-top:0;padding-bottom:calc(env(safe-area-inset-bottom) + 72px);box-sizing:border-box}.moments-cover{height:min(48dvh,390px);min-height:280px;position:relative;margin-top:0;padding-top:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;background:linear-gradient(to bottom,transparent 66%,rgb(var(--moments-surface-rgb)/.10) 78%,rgb(var(--moments-surface-rgb)/.46) 89%,rgb(var(--moments-surface-rgb)/.88) 97%,rgb(var(--moments-surface-rgb)) 100%),var(--moments-cover-image,linear-gradient(145deg,#dedbd5,#b9b6b0));background-position:center;background-size:cover;cursor:pointer}.moments-cover-hint{position:absolute;right:18px;bottom:90px;color:#fff;font-size:12px;text-shadow:0 1px 8px #0008}.moments-profile{position:absolute;right:20px;bottom:-24px;display:flex;align-items:center;gap:12px;color:#fff;text-shadow:0 1px 5px #0006}.moments-profile strong{font-size:16px}.moments-avatar,.moment-avatar{width:68px;height:68px;display:grid;place-items:center;overflow:hidden;border:3px solid #fff;border-radius:50%;color:#777;background:#e8e5e0;font-size:20px}.moments-avatar img{width:100%;height:100%;object-fit:cover}.moments-feed{padding:40px 18px 24px}.moment-post{display:flex;gap:12px;padding:17px 0;border-bottom:1px solid rgba(110,120,112,.045)}.moment-avatar{width:42px;height:42px;flex:none;border:0;font-size:14px}.moment-body{min-width:0;flex:1}.moment-body strong{color:#50627a;font-size:14px}.moment-body p{margin:7px 0;color:#333;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.moment-body small{display:block;margin-top:9px;color:#aaa;font-size:11px}.moment-image{display:block;max-width:100%;max-height:260px;margin-top:8px;border-radius:5px;object-fit:cover}.moments-empty{padding:20px 0;color:#aaa;text-align:center;font-size:12px}.moment-composer-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:#0005;backdrop-filter:blur(6px)}.moment-composer{width:min(100%,480px);max-height:calc(100dvh - 40px);overflow:auto;padding:17px;border-radius:20px;background:#fff}.moment-composer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.moment-composer header button{border:0;color:#777;background:transparent}.moment-composer .moment-publish{padding:7px 14px;border-radius:16px;color:#fff;background:#738b78}.moment-composer .moment-publish:disabled{opacity:.45}.moment-composer textarea{width:100%;min-height:130px;resize:vertical;box-sizing:border-box;border:0;outline:0;font:inherit;font-size:15px}.moment-composer-tools{display:flex;align-items:flex-end;gap:10px;margin:10px 0 16px}.moment-add-image{width:76px;height:76px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:#85888a;background:#ededed;cursor:pointer}.moment-add-image svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.moment-tool-hint{padding-bottom:4px;color:#aaa;font-size:11px}.moment-image-preview{width:76px;height:76px;position:relative}.moment-image-preview img{width:100%;height:100%;border-radius:5px;object-fit:cover}.moment-image-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;color:white;background:#555;font-size:17px}.moment-option{min-height:48px;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid #f0f0ef;color:#454746;background:transparent;text-align:left;font:inherit;font-size:13px;cursor:pointer}.moment-option-icon{width:22px;flex:none;color:#858b86;text-align:center;font-size:17px}.moment-option>span:nth-child(2){flex:none}.moment-option small{min-width:0;flex:1;overflow:hidden;color:#999;text-align:right;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.moment-option b{flex:none;color:#b6b8b6;font-size:19px;font-weight:400}.moment-option:active{background:#f8f9f7}.moment-friend-avatar{flex:none;overflow:hidden;font-size:14px}.moment-friend-avatar img{width:100%;height:100%;object-fit:cover}.moment-friend-avatar>span{display:grid;width:100%;height:100%;place-items:center}.moment-composer>input[type=file],.moments-page>input[type=file]{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important}.moment-subdialog-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:18px;background:#0005;backdrop-filter:blur(6px)}.moment-subdialog{width:min(100%,420px);max-height:min(80dvh,620px);overflow:auto;padding:16px;border-radius:18px;background:#fff;box-shadow:0 16px 50px #0002}.moments-page .moment-composer-backdrop,.moments-page .moment-subdialog-backdrop{background:rgba(244,250,245,.72);backdrop-filter:none;-webkit-backdrop-filter:none}.moments-page .moment-composer,.moments-page .moment-subdialog{border:0;border-radius:24px;background:#fff;box-shadow:0 12px 36px rgba(75,115,84,.12)}.moments-page .moment-composer header,.moments-page .moment-subdialog header{margin-bottom:16px}.moments-page .moment-composer header button,.moments-page .moment-subdialog header button{min-height:36px;padding:0 12px;border:0;border-radius:18px;color:#568364;background:#eaf5ec;font:inherit;font-size:13px}.moments-page .moment-composer .moment-publish,.moments-page .moment-subdialog header button:last-child{color:#477b56;background:#dff1e3;font-weight:600}.moments-page .moment-composer .moment-publish:disabled{color:#7d9d84;background:#edf5ee}.moments-page .moment-choice{color:#46554a}.moments-page .moment-choice i{color:#5b9669}.moments-page .moment-subdialog{width:min(calc(100% - 32px),446px);padding:17px;box-sizing:border-box}.moments-page .moment-option,.moments-page .moment-choice{width:100%;box-sizing:border-box;border:0;border-radius:0;background:transparent}.moments-page .moment-option{min-height:48px;margin-top:0;padding:0}.moments-page .moment-choice{min-height:48px;margin:0;padding:0}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:transparent}
+.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control>small{display:block;margin-top:8px;color:#999;font-size:11px}.moments-page{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;background:rgb(var(--moments-surface-rgb)/.96);padding-top:0;padding-bottom:calc(env(safe-area-inset-bottom) + 72px);box-sizing:border-box}.moments-cover{height:min(48dvh,390px);min-height:280px;position:relative;margin-top:0;padding-top:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;background:linear-gradient(to bottom,transparent 66%,rgb(var(--moments-surface-rgb)/.10) 78%,rgb(var(--moments-surface-rgb)/.46) 89%,rgb(var(--moments-surface-rgb)/.88) 97%,rgb(var(--moments-surface-rgb)) 100%),var(--moments-cover-image,linear-gradient(145deg,#dedbd5,#b9b6b0));background-position:center;background-size:cover;cursor:pointer}.moments-cover-hint{position:absolute;right:18px;bottom:90px;color:#fff;font-size:12px;text-shadow:0 1px 8px #0008}.moments-profile{position:absolute;right:20px;bottom:-24px;display:flex;align-items:center;gap:12px;color:#fff;text-shadow:0 1px 5px #0006}.moments-profile strong{font-size:16px}.moments-avatar,.moment-avatar{width:68px;height:68px;display:grid;place-items:center;overflow:hidden;border:3px solid #fff;border-radius:50%;color:#777;background:#e8e5e0;font-size:20px}.moments-avatar img{width:100%;height:100%;object-fit:cover}.moments-feed{padding:40px 18px 24px}.moment-avatar{width:42px;height:42px;flex:none;border:0;font-size:14px}.moment-body{min-width:0;flex:1}.moment-body p{margin:7px 0;color:#333;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.moment-body small{display:block;margin-top:9px;color:#aaa;font-size:11px}.moment-image{display:block;max-width:100%;max-height:260px;margin-top:8px;border-radius:5px;object-fit:cover}.moments-empty{padding:20px 0;color:#aaa;text-align:center;font-size:12px}.moment-composer-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:#0005;backdrop-filter:blur(6px)}.moment-composer{width:min(100%,480px);max-height:calc(100dvh - 40px);overflow:auto;padding:17px;border-radius:20px;background:#fff}.moment-composer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.moment-composer header button{border:0;color:#777;background:transparent}.moment-composer .moment-publish{padding:7px 14px;border-radius:16px;color:#fff;background:#738b78}.moment-composer .moment-publish:disabled{opacity:.45}.moment-composer textarea{width:100%;min-height:130px;resize:vertical;box-sizing:border-box;border:0;outline:0;font:inherit;font-size:15px}.moment-composer-tools{display:flex;align-items:flex-end;gap:10px;margin:10px 0 16px}.moment-add-image{width:76px;height:76px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:#85888a;background:#ededed;cursor:pointer}.moment-add-image svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.moment-tool-hint{padding-bottom:4px;color:#aaa;font-size:11px}.moment-image-preview{width:76px;height:76px;position:relative}.moment-image-preview img{width:100%;height:100%;border-radius:5px;object-fit:cover}.moment-image-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;color:white;background:#555;font-size:17px}.moment-option{min-height:48px;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid #f0f0ef;color:#454746;background:transparent;text-align:left;font:inherit;font-size:13px;cursor:pointer}.moment-option-icon{width:22px;flex:none;color:#858b86;text-align:center;font-size:17px}.moment-option>span:nth-child(2){flex:none}.moment-option small{min-width:0;flex:1;overflow:hidden;color:#999;text-align:right;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.moment-option b{flex:none;color:#b6b8b6;font-size:19px;font-weight:400}.moment-option:active{background:#f8f9f7}.moment-friend-avatar{flex:none;overflow:hidden;font-size:14px}.moment-friend-avatar img{width:100%;height:100%;object-fit:cover}.moment-friend-avatar>span{display:grid;width:100%;height:100%;place-items:center}.moment-composer>input[type=file],.moments-page>input[type=file]{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important}.moment-subdialog-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:18px;background:#0005;backdrop-filter:blur(6px)}.moment-subdialog{width:min(100%,420px);max-height:min(80dvh,620px);overflow:auto;padding:16px;border-radius:18px;background:#fff;box-shadow:0 16px 50px #0002}.moments-page .moment-composer-backdrop,.moments-page .moment-subdialog-backdrop{background:rgba(244,250,245,.72);backdrop-filter:none;-webkit-backdrop-filter:none}.moments-page .moment-composer,.moments-page .moment-subdialog{border:0;border-radius:24px;background:#fff;box-shadow:0 12px 36px rgba(75,115,84,.12)}.moments-page .moment-composer header,.moments-page .moment-subdialog header{margin-bottom:16px}.moments-page .moment-composer header button,.moments-page .moment-subdialog header button{min-height:36px;padding:0 12px;border:0;border-radius:18px;color:#568364;background:#eaf5ec;font:inherit;font-size:13px}.moments-page .moment-composer .moment-publish,.moments-page .moment-subdialog header button:last-child{color:#477b56;background:#dff1e3;font-weight:600}.moments-page .moment-composer .moment-publish:disabled{color:#7d9d84;background:#edf5ee}.moments-page .moment-choice{color:#46554a}.moments-page .moment-choice i{color:#5b9669}.moments-page .moment-subdialog{width:min(calc(100% - 32px),446px);padding:17px;box-sizing:border-box}.moments-page .moment-option,.moments-page .moment-choice{width:100%;box-sizing:border-box;border:0;border-radius:0;background:transparent}.moments-page .moment-option{min-height:48px;margin-top:0;padding:0}.moments-page .moment-choice{min-height:48px;margin:0;padding:0}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:transparent}
 .moments-topbar .topbar-spacer{flex:1}
 .moment-generation-error-backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}.moment-generation-error-card{width:min(100%,480px);padding:26px 24px 22px;border-radius:24px;box-shadow:0 18px 55px rgba(32,55,43,.14)}.moment-generation-error-card header{margin-bottom:16px}.moment-generation-error-card header strong{font-size:19px;color:#343a36}.moment-generation-error-card p{margin:0;color:#626a65;font-size:15px;line-height:1.65;overflow-wrap:anywhere}.moment-generation-error-confirm{width:100%;min-height:46px;margin-top:22px;border:0;border-radius:14px;color:#fff;background:#648b70;font:inherit;font-size:15px;font-weight:600;cursor:pointer}.moment-generation-error-confirm:active{background:#52775e}.moment-choice{width:100%;min-height:48px;display:flex;align-items:center;justify-content:space-between;border:0;border-bottom:1px solid #eee;color:#444;background:#fff;text-align:left;font:inherit;font-size:14px}.moment-choice i{color:#718879;font-style:normal}.moment-picker-tip{color:#999;font-size:12px}.moment-friend-option{min-height:64px;display:flex;align-items:center;gap:14px;padding:8px 4px;border-bottom:0;font-size:14px}.moments-page .moment-friend-option{min-height:68px;gap:15px;padding:10px 6px;border:0}.moments-page .moment-friend-avatar{width:42px;height:42px;flex:none;border:2px solid #f2f7f1;box-shadow:0 2px 8px rgba(80,115,86,.1)}.moments-page .moment-friend-option input{width:18px;height:18px;margin:0 4px 0 0;accent-color:#78917e}.moments-page .moment-friend-option>span:last-child{line-height:1.5}.moment-friend-option input{accent-color:#78917e}.moment-friend-avatar{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;color:#68776c;background:#edf0eb}.moment-location-dialog{width:min(100%,500px)}.moment-map-preview{height:190px;position:relative;display:grid;place-items:center;overflow:hidden;margin:10px 0;border-radius:13px;background:#e9ede7}.moment-map-preview>span{z-index:1;color:#d35c4b;font-size:27px}.moment-map-preview small{position:absolute;bottom:10px;color:#737c73;font-size:10px}.moment-map-grid{position:absolute;inset:-30%;background:repeating-linear-gradient(25deg,transparent 0 32px,#fff 33px 36px,transparent 37px 70px),repeating-linear-gradient(115deg,transparent 0 48px,#d8dfd5 49px 52px,transparent 53px 90px)}.moment-location-search-row{display:flex;gap:7px}.moment-location-search{width:100%;min-height:40px;box-sizing:border-box;padding:8px 10px;border:1px solid #e6e6e6;border-radius:9px;outline:0;font:inherit;font-size:13px}.moment-location-search-row button,.moment-location-confirm{min-height:38px;padding:0 12px;border:0;border-radius:9px;color:#fff;background:#788f7e;font:inherit;font-size:12px}.moment-location-confirm{width:100%;margin:9px 0}.moment-location-confirm:disabled{opacity:.55}.moment-location-result{width:100%;padding:10px 0;border:0;border-bottom:1px solid #eee;color:#555;background:#fff;text-align:left;font:inherit;font-size:11px;line-height:1.5}
 .my-profile-card{display:flex;align-items:center;gap:15px;margin:10px 0 25px;padding:17px 16px;border:1px solid #e8ece9;border-radius:22px;background:linear-gradient(145deg,#ffffffed,#f5f8f6e8);box-shadow:0 9px 25px #30483e0b}.my-profile-avatar{width:64px;height:64px;flex:none;display:grid;place-items:center;overflow:hidden;padding:0;border:0;border-radius:50%;color:#779185;background:#e8eeeb;font-size:25px;font-weight:600}.my-profile-avatar img{width:100%;height:100%;object-fit:cover}.my-profile-copy{min-width:0;flex:1}.my-profile-copy strong{display:block;overflow:hidden;color:#3d4943;font-size:17px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.my-profile-copy p{display:-webkit-box;overflow:hidden;margin:5px 0 0;color:#78827c;font-size:12px;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}.my-profile-copy p.empty-bio{color:#9a9f9b}.my-profile-edit{display:flex;align-items:center;gap:4px;flex:none;padding:8px 0 8px 6px;border:0;color:#648574;background:transparent;font:inherit;font-size:10px;letter-spacing:.02em;cursor:pointer}.my-profile-edit span{font-size:17px;line-height:1}

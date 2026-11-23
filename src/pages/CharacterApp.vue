@@ -117,11 +117,29 @@ function toggleTrashSelection(character) {
   selectedForTrash.value = selectedForTrash.value === character.id ? null : character.id
 }
 
-function discardSelectedCharacter() {
+async function discardSelectedCharacter() {
   if (selectedForTrash.value === null) return
-  characters.value = characters.value.filter((character) => character.id !== selectedForTrash.value)
-  if (posterCharacter.value?.id === selectedForTrash.value) posterCharacter.value = null
+  const removedId = selectedForTrash.value
+  characters.value = characters.value.filter((character) => character.id !== removedId)
+  if (posterCharacter.value?.id === removedId) posterCharacter.value = null
   selectedForTrash.value = null
+  // 同步清理聊天相关数据：聊天记录与设置保留，但好友列表、删除记录与申请中该角色的条目一并移除
+  await purgeCharacterChatRefs(removedId)
+}
+
+// 角色被删除后，清掉聊天列表中对它的引用（好友列表、删除记录、待处理申请）。
+// 聊天记录与设置按需求保留；只有在该角色已不是好友时，删人物才会真正清干净。
+async function purgeCharacterChatRefs(id) {
+  const contacts = (await loadValue('jyos_chat_contacts')) || []
+  if (Array.isArray(contacts) && contacts.includes(id)) await saveValue('jyos_chat_contacts', contacts.filter((item) => item !== id))
+  const removedAt = (await loadValue('jyos_friend_removed_at')) || {}
+  if (removedAt && typeof removedAt === 'object' && id in removedAt) {
+    const next = { ...removedAt }
+    delete next[id]
+    await saveValue('jyos_friend_removed_at', next)
+  }
+  const requests = (await loadValue('jyos_friend_requests')) || []
+  if (Array.isArray(requests)) await saveValue('jyos_friend_requests', requests.filter((item) => item?.characterId !== id))
 }
 
 function openClue(index) {
@@ -252,7 +270,6 @@ function selectDraftAvatar(event) {
 </template>
 
 <style>
-@import url("https://fontsapi.zeoseven.com/572/main/result.css");
 
 /* 仅统一人物应用的字体，包含子组件、弹窗及表单控件。 */
 .character-app,

@@ -1,5 +1,4 @@
-/* 全局字体：破晓像素体 */
-@import url("https://fontsapi.zeoseven.com/870/main/result.css");
+/* 全局字体：系统默认无衬线字体 */
 
 :root {
   --cols: 4;                         /* 横向 4 格 */
@@ -24,7 +23,7 @@ body,
   min-height: 100vh;
   background: #f7f8fa;
   overflow: hidden;
-  font-family: "PoxiaoPixel", -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
   font-weight: normal;
   -webkit-user-select: none;
   user-select: none;
