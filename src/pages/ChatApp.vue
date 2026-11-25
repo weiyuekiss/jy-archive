@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { theme } from '@/stores/theme'
 import { loadValue, saveValue } from '@/stores/db'
 import { userProfile, profileSettings, apiSettings, getCurrentPreset } from '@/stores/settings'
@@ -9,6 +9,15 @@ import MemoryConfigPage from '@/components/MemoryConfigPage.vue'
 import { reportChatError } from '@/stores/chatErrors'
 import tritoneSoundUrl from '@/assets/sounds/qq-tritone.mp3?url'
 import { roleplayRevision, managedRoleplayIds, migratePhoneChatScene } from '@/stores/chatRoleplay'
+import { currentChatId } from '@/stores/pet'
+import { replyNotices as sharedReplyNotices, pushReplyNotice, clearReplyNotices as clearSharedReplyNotices, pendingNoticeChat, openNoticeFromAnywhere } from '@/stores/replyNotice'
+import { getPhone } from '@/stores/phone'
+import { worldData, loadWorlds, knownBy, worldOf } from '@/stores/worlds'
+import { groupChats, groupChatItem, groupOf, loadGroupChats, createGroupChat, isGroupId, visibleGroups, updateGroup, deleteGroup, leaveGroup, pruneGroupMembers } from '@/stores/groupChats'
+import { requestGroupCompletion, parseGroupReplies, limitSpeakers } from '@/components/pet/generateGroupReply'
+import GroupCreatePage from '@/components/GroupCreatePage.vue'
+import GroupSettingsPage from '@/components/GroupSettingsPage.vue'
+import { MEMORY_BUDGET, memoryLinesOf, transcriptLines } from '@/components/pet/chatMemoryText'
 import { DEFAULT_PRESET_ID, MAX_INJECTION_DEPTH, assemblePresetMessages, normalizeChatPreset, normalizePromptEntry } from '@/stores/chatPresets'
 
 const chatFont = computed(() => theme.fonts.find((font) => font.id === theme.fontAssignments.chat))
@@ -64,7 +73,15 @@ const momentsLocationQuery = ref('')
 const momentsLocationResults = ref([])
 const momentsLocationBusy = ref(false)
 const momentsStorageReady = ref(false)
-const momentsSettings = ref({ enabled: true, characterPosts: false, characterInteractions: false, fictionalVisitors: false, autoGenerate: false, generationIntervalMinutes: 40, interactionIntervalMinutes: 10 })
+const momentsSettings = ref({ enabled: true, characterPosts: false, characterInteractions: false, fictionalVisitors: false, autoGenerate: false, generationIntervalMinutes: 120, interactionIntervalMinutes: 30 })
+// 按当前设置估算每天最多发出的自动生成请求数（内容与互动各按间隔计算，同一时刻合并为一次请求，因此为上限）
+const momentsDailyRequestEstimate = computed(() => {
+  const s = momentsSettings.value
+  if (!s.enabled || !s.autoGenerate) return 0
+  const posts = s.characterPosts ? Math.floor(1440 / Math.max(1, Number(s.generationIntervalMinutes) || 120)) : 0
+  const interactions = (s.characterInteractions || s.fictionalVisitors) ? Math.floor(1440 / Math.max(1, Number(s.interactionIntervalMinutes) || 30)) : 0
+  return posts + interactions
+})
 let momentsAutoTimer = null
 let momentsAutoLastRun = 0
 let momentsInteractionLastRun = 0
@@ -87,8 +104,8 @@ function saveMomentsAutoLastRun(timestamp) {
 function checkMomentsAutoGeneration() {
   if (!momentsSettingsReady.value || !momentsStorageReady.value || !momentsSettings.value.autoGenerate || !momentsSettings.value.enabled || (!momentsSettings.value.characterPosts && !momentsSettings.value.characterInteractions && !momentsSettings.value.fictionalVisitors) || document.hidden || momentsGeneratingPosts.value) return
   const now = Date.now()
-  const postInterval = Math.max(1, Number(momentsSettings.value.generationIntervalMinutes) || 40) * 60_000
-  const interactionInterval = Math.max(1, Number(momentsSettings.value.interactionIntervalMinutes) || 10) * 60_000
+  const postInterval = Math.max(1, Number(momentsSettings.value.generationIntervalMinutes) || 120) * 60_000
+  const interactionInterval = Math.max(1, Number(momentsSettings.value.interactionIntervalMinutes) || 30) * 60_000
   const postsDue = momentsSettings.value.characterPosts && now - momentsAutoLastRun >= postInterval
   const interactionsDue = (momentsSettings.value.characterInteractions || momentsSettings.value.fictionalVisitors) && now - momentsInteractionLastRun >= interactionInterval
   if (!postsDue && !interactionsDue) return
@@ -102,6 +119,8 @@ const momentsCommentDialogPostId = ref('')
 const momentDeleteConfirmPost = ref(null)
 const momentsGeneratingPostIds = ref([])
 const momentsGenerationError = ref('')
+// 自动生成的失败状态只显示在页面角落的小字里，不弹窗
+const momentsAutoStatus = ref('')
 const fictionalVisitorsConfirmOpen = ref(false)
 const momentsGeneratingPosts = ref(false)
 const momentsGenerationController = ref(null)
@@ -183,6 +202,9 @@ const boundCount = computed(() => contacts.value.length)
 const emit = defineEmits(['close'])
 const currentTab = ref('聊天')
 const activeChat = ref(null)
+// 同步给桌宠，让小白知道用户正在看哪个聊天
+watch(activeChat, (chat) => { currentChatId.value = chat?.id || '' })
+onBeforeUnmount(() => { currentChatId.value = '' })
 const draft = ref('')
 const messages = ref([])
 const visibleMessageCount = ref(80)
@@ -268,8 +290,8 @@ let toastTimer = null
 let pressTimer = null
 let pressStarted = false
 const pendingReplies = Object.create(null)
-const replyNotices = ref([])
-let noticeId = 0
+// 提示队列改为全局共享（见 stores/replyNotice.js），离开聊天 app 也能在桌面显示
+const replyNotices = sharedReplyNotices
 let noticeTimers = []
 const activeUserPersona = computed(() => profileSettings.profiles.find((profile) => profile.id === chatConfig.value.profileId) || userProfile)
 const activeUserAvatar = computed(() => activeUserPersona.value?.avatar || userProfile.avatar || '')
@@ -478,11 +500,7 @@ function showReplyNotices(chat, replies) {
     const delay = startDelay + index * 900
     const timer = setTimeout(() => {
       if (activeChat.value?.id === chat.id) return
-      const id = ++noticeId
-      replyNotices.value.push({ id, chat, text })
-      setTimeout(() => {
-        replyNotices.value = replyNotices.value.filter((notice) => notice.id !== id)
-      }, 5200)
+      pushReplyNotice(chat, text)
     }, delay)
     noticeTimers.push(timer)
   })
@@ -491,7 +509,7 @@ function showReplyNotices(chat, replies) {
 function clearReplyNotices() {
   noticeTimers.forEach(clearTimeout)
   noticeTimers = []
-  replyNotices.value = []
+  clearSharedReplyNotices()
 }
 
 function playSound(kind) {
@@ -610,6 +628,18 @@ function openChat(chat) {
   })
 }
 
+// 从桌面等其他地方点击新消息提示时，打开对应聊天并定位到那条回复
+function consumePendingNoticeChat() {
+  const pending = pendingNoticeChat.value
+  if (!pending) return
+  pendingNoticeChat.value = null
+  const chat = contacts.value.find((person) => person.id === pending.chatId) || (groupOf(pending.chatId) ? groupChatItem(groupOf(pending.chatId)) : null)
+  if (!chat) return
+  openNoticeChat({ chat, text: pending.text })
+}
+
+watch(pendingNoticeChat, (value) => { if (value) consumePendingNoticeChat() })
+
 function openNoticeChat(notice) {
   if (!notice?.chat) return
   const chat = notice.chat
@@ -617,7 +647,7 @@ function openNoticeChat(notice) {
   clearReplyNotices()
   openChat(chat)
   requestAnimationFrame(() => {
-    const foundIndex = messages.value.findIndex((message) => message.from === 'them' && message.text === replyText)
+    const foundIndex = messages.value.findIndex((message) => message.from === 'them' && (message.text === replyText || (message.speaker && `${message.speaker}：${message.text}` === replyText)))
     if (foundIndex < 0) return
     visibleMessageCount.value = Math.max(80, messages.value.length - foundIndex)
     requestAnimationFrame(() => {
@@ -696,6 +726,10 @@ function confirmHistoryAction() {
 
 function openChatSettings() {
   if (!activeChat.value) return
+  if (isGroupId(activeChat.value.id)) {
+    groupSettingsOpen.value = true
+    return
+  }
   chatSettingsOpen.value = true
 }
 
@@ -994,7 +1028,9 @@ function profileToText(profile) {
 
 function characterToText(character) {
   if (!character) return '（暂无角色资料）'
-  return Object.entries({ 姓名: character.name, 性别: character.gender, 生日: character.birthday, 年龄: character.age, 职业: character.occupation, 人物设定: character.details })
+  // 角色自己的手机开机密码，角色被问起时可以告诉用户；没有手机数据则不写
+  const phonePasscode = getPhone(character.id)?.passcode
+  return Object.entries({ 姓名: character.name, 性别: character.gender, 生日: character.birthday, 年龄: character.age, 职业: character.occupation, 人物设定: character.details, 手机开机密码: phonePasscode })
     .filter(([, value]) => value)
     .map(([label, value]) => `${label}：${value}`)
     .join('\n') || '（暂无角色资料）'
@@ -1041,23 +1077,8 @@ function parseReplyMessages(raw) {
   if (!replies.length) throw new Error('角色暂时没有生成回复，请重试。')
   if (typeof parsed.feeling === 'string' && parsed.feeling.trim()) replies[0].feeling = parsed.feeling.trim().slice(0, 700)
 
-  // 仅拆分普通文字回复；标点归入前一句，并将逗号统一改为句号。
-  const splitReplies = replies.flatMap((reply) => {
-    if (reply.type !== 'text') return [reply]
-    const segments = reply.text.split(/([，,。.!！?？])/u)
-    const parts = []
-    for (let index = 0; index < segments.length; index += 2) {
-      let sentence = segments[index] || ''
-      const punctuation = segments[index + 1] || ''
-      if (punctuation) sentence += /[，,]/u.test(punctuation) ? '。' : punctuation
-      sentence = sentence.trim()
-      if (sentence) parts.push(sentence)
-    }
-    if (parts.length <= 1) return [reply]
-    return parts.map((text, index) => index === 0 ? { ...reply, text } : { text, type: 'text' })
-  })
-  splitReplies.transferAction = transferAction
-  return splitReplies
+  replies.transferAction = transferAction
+  return replies
 }
 
 async function completeMissingStatusFeeling(replies, history, preset, controller, previousStatus = null) {
@@ -1190,6 +1211,10 @@ async function requestCharacterReply(chat, history, controller, previousStatus =
     return `【${entry.name}】\n${content}`
   }
   const systemPrompt = [
+    ...(longTermMemoryPrompt(chat.id, { userName, characterName }) ? [longTermMemoryPrompt(chat.id, { userName, characterName })] : []),
+    ...(worldKnowledgePrompt(chat.id) ? [worldKnowledgePrompt(chat.id)] : []),
+    ...groupContextForCharacter(chat.id, { userName }),
+    ...(userProfileBlock(profile) ? [userProfileBlock(profile)] : []),
     ...(systemInstruction ? [`【当前聊天额外指令】\n${systemInstruction}`] : []),
     ...(previousStatus ? [`【上一轮角色状态】${JSON.stringify({ closeness: previousStatus.closeness, security: previousStatus.security, energy: previousStatus.energy, heartFlutter: previousStatus.heartFlutter })}。本轮数值应以此为起点，依据实际互动做出有意义的调整，不要无故回到 50。`] : []),
     `【我方转账处理】若上下文显示用户有一笔“等待对方收款”的转账，你必须在 JSON 顶层给出 transferAction："accept"（收下）或 "return"（退还），根据角色性格和当下关系自主决定，不要默认拒绝。没有待处理转账时不要输出该字段。
@@ -1445,6 +1470,119 @@ function sendChatItem(payload, requestText) {
   if (replyImmediately.value) requestReply(requestText || (payload.type === 'voice' ? `用户发送了一条语音消息，语音识别文字为：${payload.transcript}。请像即时聊天一样回应。你没有听到录音；可根据用户明确提供的声音印象理解，但不要假装实际听过。` : '用户发送了一张文字图或转账卡片，请结合卡片内容自然回应。'))
 }
 
+// 转发聊天记录：把源角色与用户的最近若干条聊天，作为一张转发卡片放进目标角色的聊天。
+// 只写入目标聊天，不改源聊天，也不触发目标角色立即回复。
+// 步骤：source（选源角色）→ messages（勾选要转发的消息）→ target（选目标角色）
+const forwardDialog = ref(null) // { step, sourceId, picked: [消息下标], ... }
+
+function openForwardDialog() {
+  attachmentOpen.value = false
+  forwardDialog.value = { step: 'source', sourceId: '', picked: [] }
+}
+
+// 源角色的可转发消息：有文字、非系统指令，按时间顺序，保留在聊天里的原始下标
+function forwardableMessages(sourceId) {
+  return (chatMessages.value[sourceId] || [])
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => message.text && message.type !== 'system-instruction')
+}
+
+// 消息列表分页：从最新的一页开始，向上滚动时再加载更早的消息，避免一次渲染全部
+const FORWARD_PAGE = 30
+const forwardVisibleCount = ref(FORWARD_PAGE)
+
+function chooseForwardSource(id) {
+  forwardVisibleCount.value = FORWARD_PAGE
+  forwardDialog.value = { step: 'messages', sourceId: id, picked: [] }
+}
+
+// 当前可见的消息：只取最新的 forwardVisibleCount 条，保持时间顺序
+const forwardWindow = computed(() => {
+  const d = forwardDialog.value
+  if (!d || d.step !== 'messages') return []
+  const all = forwardableMessages(d.sourceId)
+  return all.slice(Math.max(0, all.length - forwardVisibleCount.value))
+})
+
+function loadMoreForward() {
+  forwardVisibleCount.value += FORWARD_PAGE
+}
+
+// 打开消息列表时滚动到底部，先看到最新的聊天记录
+const forwardPickRef = ref(null)
+watch(() => forwardDialog.value?.step === 'messages' ? forwardDialog.value.sourceId : '', async (id) => {
+  if (!id) return
+  await nextTick()
+  if (forwardPickRef.value) forwardPickRef.value.scrollTop = forwardPickRef.value.scrollHeight
+})
+
+function togglePickForward(index) {
+  const d = forwardDialog.value
+  if (!d) return
+  const picked = d.picked.includes(index) ? d.picked.filter((i) => i !== index) : [...d.picked, index]
+  forwardDialog.value = { ...d, picked }
+}
+
+function confirmForwardPicks() {
+  const d = forwardDialog.value
+  if (!d || !d.picked.length) return
+  forwardDialog.value = { ...d, step: 'target' }
+}
+
+// 只取勾选的消息，按聊天里的先后顺序拼成记录
+// 群聊请求用：把一条消息转成发给模型的文字。图片、转账、文字图等类型转成一句说明。单聊仍用 requestReply 里的写法。
+function messageRequestText(message, userName = '用户') {
+  if (message.type === 'image') return message.text || '用户发送了一张图片。'
+  if (message.type === 'text-image') return `（发送文字图：${message.content}）`
+  if (message.type === 'transfer') return `（发起转账：${message.amount}元；状态：${message.transferStatus || '待处理'}）`
+  if (message.type === 'voice') return `（语音消息${message.transcript ? `；识别文字：${message.transcript}` : '；无识别文字'}）`
+  if (message.type === 'forward') return `（用户转发了${message.fromName}与其他人的聊天记录，内容如下，仅供你了解这些事，不要当成你自己说过的话）：\n${message.transcript}`
+  return message.text || ''
+}
+
+// 转发时的来源或目标：角色或群
+function forwardEntityName(id) {
+  if (isGroupId(id)) return groupOf(id)?.name || '群聊'
+  return contacts.value.find((c) => c.id === id)?.name || '角色'
+}
+
+// 转发的记录里，群消息保留发言成员的名字，单聊消息用角色名
+function forwardTranscript(sourceId, picked) {
+  const sourceName = forwardEntityName(sourceId)
+  // 发言名字已在 speaker 里，sourceName 只用于单聊消息
+  const chosen = (chatMessages.value[sourceId] || []).filter((_, index) => picked.includes(index))
+  return chosen.map((m) => {
+    const who = m.from === 'me' ? '用户' : (m.speaker || sourceName)
+    return `${who}：${String(m.text).slice(0, 200)}`
+  }).join('\n')
+}
+
+function submitForward(targetId) {
+  const dialog = forwardDialog.value
+  if (!dialog || !dialog.sourceId || !dialog.picked.length || targetId === dialog.sourceId) return
+  const sourceName = forwardEntityName(dialog.sourceId)
+  const transcript = forwardTranscript(dialog.sourceId, dialog.picked)
+  if (!sourceName || !transcript) {
+    forwardDialog.value = null
+    showToast('没有可转发的消息。')
+    return
+  }
+  const history = [...(chatMessages.value[targetId] || [])]
+  history.push({
+    from: 'me',
+    type: 'forward',
+    fromName: sourceName,
+    transcript,
+    text: `转发了${sourceName}的聊天记录`,
+    time: currentTime(),
+    timestamp: new Date().toISOString()
+  })
+  chatMessages.value[targetId] = history
+  persistChatHistory()
+  forwardDialog.value = null
+  if (activeChat.value?.id === targetId) messages.value = history
+}
+
 function toggleAttachments() {
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
     navigator.vibrate(12)
@@ -1485,6 +1623,10 @@ function requestReply(userText = '') {
   if (typeof userText !== 'string') userText = ''
   const chat = activeChat.value
   if (!chat || pendingReplies[chat.id]?.promise) return
+  if (isGroupId(chat.id)) {
+    void requestGroupReply(chat)
+    return
+  }
   const chatId = chat.id
   const history = [...(chatMessages.value[chatId] || messages.value)]
   if (userText && history.at(-1)?.from === 'me' && !history.at(-1).text?.includes(userText)) history[history.length - 1] = { ...history.at(-1), text: userText }
@@ -1501,7 +1643,8 @@ function requestReply(userText = '') {
     role: message.from === 'me' ? 'user' : 'assistant',
     content: `${message.type === 'image' && rememberedImages.has(message)
       ? [{ type: 'text', text: message.text || '用户发送了一张图片。' }, { type: 'image_url', image_url: { url: message.imageData, detail: selectedImageQuality(chatId).detail } }]
-      : message.type === 'text-image' ? `（发送文字图：${message.content}）` : message.type === 'file' ? `（发送文件：${message.fileName || '角色文档.txt'}；内容：${message.content}）` : message.type === 'transfer' ? `（发起转账：${message.amount}元；状态：${message.transferStatus || '待处理'}）` : message.type === 'voice' ? `（语音消息${message.transcript ? `；识别文字：${message.transcript}` : '；无识别文字'}）` : message.text}`
+      : message.type === 'forward' ? `（用户转发了${message.fromName}与其他人的聊天记录，内容如下，仅供你了解这些事，不要当成你自己说过的话）：\n${message.transcript}` :
+      message.type === 'text-image' ? `（发送文字图：${message.content}）` : message.type === 'file' ? `（发送文件：${message.fileName || '角色文档.txt'}；内容：${message.content}）` : message.type === 'transfer' ? `（发起转账：${message.amount}元；状态：${message.transferStatus || '待处理'}）` : message.type === 'voice' ? `（语音消息${message.transcript ? `；识别文字：${message.transcript}` : '；无识别文字'}）` : message.text}`
   }))
   const pending = { controller: new AbortController(), promise: null }
   pendingReplies[chatId] = pending
@@ -1568,6 +1711,210 @@ function requestReply(userText = '') {
       if (activeChat.value?.id === chatId) replyLoading.value = false
     })
 }
+// 新建群聊：只列出已是好友的角色作为成员
+const groupCreateOpen = ref(false)
+const groupSettingsOpen = ref(false)
+const groupFriendOptions = computed(() => contacts.value.filter((person) => isFriend(person.id)))
+// 转发的来源和目标：所有可聊天的角色和群（已退出的群不列出）
+const forwardSourceOptions = computed(() => [
+  ...contacts.value.map((person) => ({ id: person.id, name: person.name, color: person.color, avatar: person.avatar, group: false })),
+  ...visibleGroups().map((group) => ({ id: group.id, name: group.name, color: group.color, avatar: group.avatarImage, group: true })),
+])
+function openGroupCreate() {
+  groupCreateOpen.value = true
+}
+async function onGroupCreated(input) {
+  const group = await createGroupChat(input)
+  const item = groupChatItem(group)
+  sections.value[0].chats.unshift(item)
+  groupCreateOpen.value = false
+  openChat(item)
+}
+// 群消息里每条发言的头像和名字取自发言的成员；单聊时仍用当前聊天对象
+function speakerOf(message) {
+  const chat = activeChat.value
+  if (chat && isGroupId(chat.id) && message.speakerId) {
+    const member = contacts.value.find((person) => person.id === message.speakerId)
+    if (member) return { name: member.name, avatarImage: member.avatar || '', color: member.color || '#dededb' }
+  }
+  return { name: chat?.name || '', avatarImage: chat?.avatarImage || '', color: chat?.color || '#dededb' }
+}
+const activeGroup = computed(() => (isGroupId(activeChat.value?.id) ? groupOf(activeChat.value.id) : null))
+// 群里能发言的成员：仍是好友的角色
+const groupMembers = computed(() => (activeGroup.value?.memberIds || [])
+  .map((id) => contacts.value.find((person) => person.id === id))
+  .filter((person) => person && isFriend(person.id)))
+const groupCandidates = computed(() => {
+  const group = activeGroup.value
+  if (!group) return []
+  return groupFriendOptions.value.filter((person) => !group.memberIds.includes(person.id))
+})
+function groupSubtitle() {
+  return `群聊 · ${groupMembers.value.length} 位成员`
+}
+function removeGroupFromList(id) {
+  sections.value[0].chats = sections.value[0].chats.filter((chat) => chat.id !== id)
+}
+// 群设置里的修改：保存群数据，并同步聊天列表和当前聊天的名字、头像
+async function onGroupPatch(patch) {
+  const id = activeChat.value?.id
+  if (!isGroupId(id)) return
+  const group = await updateGroup(id, patch)
+  const item = groupChatItem(group)
+  sections.value[0].chats = sections.value[0].chats.map((chat) => (chat.id === id ? item : chat))
+  if (activeChat.value?.id === id) activeChat.value = item
+}
+async function onGroupLeave() {
+  const id = activeChat.value?.id
+  if (!isGroupId(id)) return
+  groupSettingsOpen.value = false
+  await leaveGroup(id)
+  removeGroupFromList(id)
+  leaveConversation()
+}
+async function onGroupDelete() {
+  const id = activeChat.value?.id
+  if (!isGroupId(id)) return
+  pendingReplies[id]?.controller.abort()
+  groupSettingsOpen.value = false
+  // 先离开会话，让 leaveConversation 写回最后的消息，再整体删除
+  leaveConversation()
+  await deleteGroup(id)
+  removeGroupFromList(id)
+  delete chatMessages.value[id]
+  delete retainedChatMemory.value[id]
+  delete longTermMemories.value[id]
+  delete groupMemoryCursors.value[id]
+  await persistLongTermMemories()
+  delete characterChatSettings.value[id]
+  persistChatHistory()
+}
+
+// 群聊回复：一次请求让模型按群的回复方式决定谁发言，再逐条写入群聊。
+async function requestGroupReply(chat) {
+  const chatId = chat.id
+  const group = groupOf(chatId)
+  if (!group) return
+  const preset = getCurrentPreset()
+  if (!preset?.baseUrl?.trim() || !preset?.model?.trim()) {
+    replyError.value = '请先在设置中配置 API 地址和模型。'
+    return
+  }
+  if (!preset.apiKey?.trim()) {
+    replyError.value = '请先在设置中填写 API Key。'
+    return
+  }
+  const members = group.memberIds.map((id) => contacts.value.find((person) => person.id === id)).filter((person) => person && isFriend(person.id))
+  if (!members.length) {
+    replyError.value = '群里没有可以发言的成员（成员需要是好友），请先拉人进群。'
+    return
+  }
+  const history = chatMessages.value[chatId] || []
+  if (!history.some((message) => message.from === 'me')) return
+  const profile = profileSettings.profiles.find((item) => item.id === chatConfig.value.profileId) || userProfile
+  const userName = profile?.name?.trim() || '用户'
+  const memoryLimit = shortTermMemoryRounds(chatId) * 2
+  const requestHistory = history
+    .filter((message) => message.type !== 'system-instruction')
+    .slice(-memoryLimit)
+    .map((message) => ({
+      role: message.from === 'me' ? 'user' : 'assistant',
+      content: message.from === 'me' ? messageRequestText(message, userName) : `${message.speaker || '成员'}：${messageRequestText(message, userName)}`,
+    }))
+  const pendingTransfer = history.filter((message) => message.from === 'me' && message.type === 'transfer' && message.transferStatus === '等待对方收款').at(-1)
+  const enabledEntries = chatConfig.value.preset.entries.filter((entry) => entry.enabled && entry.content.trim() && !entry.id.startsWith('api-'))
+  // 群聊记忆、群里更早的对话（超出最近窗口的部分），以及每位成员对用户的长期记忆和与用户单聊的近况
+  const groupMemory = memoryLinesOf(longTermMemories.value[chatId], { userName, characterName: group.name, maxChars: MEMORY_BUDGET.group })
+  const earlier = transcriptLines(history.slice(0, Math.max(0, history.length - memoryLimit)), {
+    nameOf: (message) => (message.from === 'me' ? userName : message.speaker || '成员'),
+    maxLines: 300,
+    maxChars: MEMORY_BUDGET.groupEarlier,
+    perLine: 200,
+  })
+  const memberBlocks = members.map((member) => {
+    const lines = memoryLinesOf(longTermMemories.value[member.id], { userName, characterName: member.name, maxChars: MEMORY_BUDGET.member })
+    const privateRecent = transcriptLines(chatMessages.value[member.id] || [], {
+      nameOf: (message) => (message.from === 'me' ? userName : member.name),
+      maxChars: MEMORY_BUDGET.memberPrivate,
+      maxLines: 60,
+    })
+    const parts = []
+    if (lines) parts.push(`【${member.name}对${userName}的长期记忆】\n${lines}`)
+    if (privateRecent) parts.push(`【${member.name}与${userName}的单聊近况】\n${privateRecent}`)
+    return parts.join('\n\n')
+  }).filter(Boolean)
+  const memoryBlocks = [
+    groupMemory ? `【群聊记忆】\n${groupMemory}` : '',
+    earlier ? `【群里更早的对话】\n${earlier}` : '',
+    ...memberBlocks,
+  ].filter(Boolean)
+  const pending = { controller: new AbortController(), promise: null }
+  pendingReplies[chatId] = pending
+  replyLoading.value = true
+  characterTyping.value = true
+  replyError.value = ''
+  pending.promise = (async () => {
+    const raw = await requestGroupCompletion({
+      preset,
+      chatPreset: chatConfig.value.preset,
+      group,
+      members,
+      userName,
+      userText: userProfileBlock(profile),
+      history: requestHistory,
+      enabledEntries,
+      controller: pending.controller,
+      memoryBlocks,
+      systemInstruction: characterChatSettings.value[chatId]?.systemInstruction?.trim() || '',
+      pendingTransfer: pendingTransfer ? pendingTransfer.amount : null,
+    })
+    if (pending.controller.signal.aborted) return
+    const parsed = parseGroupReplies(raw, members)
+    let replies = parsed.replies
+    if (group.replyMode === 'smart') replies = limitSpeakers(replies, group.maxSpeakers)
+    if (parsed.transferAction) {
+      // 转账由群里某位成员决定：把用户那笔待处理转账标记为收下或退还
+      const target = [...history].reverse().find((message) => message.from === 'me' && message.type === 'transfer' && message.transferStatus === '等待对方收款')
+      if (target) {
+        const state = parsed.transferAction === 'accept' ? '已收款' : '已退还'
+        const stored = (chatMessages.value[chatId] || []).find((message) => message.timestamp === target.timestamp)
+        if (stored) stored.transferStatus = state
+        persistChatHistory()
+      }
+    }
+    for (let index = 0; index < replies.length; index += 1) {
+      const reply = replies[index]
+      await wait(replyDelay(reply.text, index))
+      if (pending.controller.signal.aborted) return
+      // 每条都重新读取当前消息，避免等待期间用户发的消息被旧副本覆盖
+      const current = [...(chatMessages.value[chatId] || [])]
+      const extra = reply.type === 'text-image' ? { content: reply.content } : reply.type === 'transfer' ? { amount: reply.amount, transferStatus: '待处理' } : {}
+      current.push({ from: 'them', type: reply.type, text: reply.text, ...extra, speaker: reply.speaker, speakerId: reply.speakerId, time: currentTime(), timestamp: new Date().toISOString() })
+      chatMessages.value[chatId] = current
+      persistChatHistory()
+      playSound('receive')
+      if (activeChat.value?.id === chatId) {
+        messages.value = current
+        scrollMessages()
+      } else {
+        showReplyNotices(chat, [`${reply.speaker}：${reply.text}`])
+      }
+    }
+    void generateGroupMemory(group, chatMessages.value[chatId] || [])
+  })()
+    .catch((error) => {
+      if (error?.name === 'AbortError') return
+      const failure = error instanceof Error ? error : new Error(String(error || '群聊回复失败，请检查 API 设置后重试。'))
+      if (activeChat.value?.id === chatId) replyError.value = failure.message || '群聊回复失败，请检查 API 设置后重试。'
+      reportChatError(failure, chat)
+    })
+    .finally(() => {
+      delete pendingReplies[chatId]
+      characterTyping.value = false
+      if (activeChat.value?.id === chatId) replyLoading.value = false
+    })
+}
+
 const searchOpen = ref(false)
 const query = ref('')
 const friendSearchOpen = ref(false)
@@ -1594,6 +1941,7 @@ const friendSearchResults = computed(() => {
   const term = friendQuery.value.trim().toLowerCase()
   return term ? contacts.value.filter((person) => person.name.toLowerCase().includes(term)) : []
 })
+// 角色的 accountId 由角色库生成（随机、唯一）；仅在旧数据缺少该字段时退回旧的 jy_ 规则
 function virtualAccountId(person) {
   return person.accountId || `jy_${String(person.id || person.name).replace(/[^a-zA-Z0-9]/g, '').slice(-5).toLowerCase().padStart(5, '0')}`
 }
@@ -1603,11 +1951,21 @@ async function refreshContacts() {
   contacts.value = Array.isArray(savedCharacters) ? savedCharacters.filter((person) => typeof person?.name === 'string' && person.name.trim()) : []
 }
 
-function onCharactersUpdated() {
-  void refreshContacts()
+async function onCharactersUpdated() {
+  await refreshContacts()
+  // 角色被删除或不再是好友时，同步移出群成员
+  void pruneGroupMembers((id) => contacts.value.some((person) => person.id === id) && isFriend(id))
 }
 
-onBeforeUnmount(() => window.removeEventListener('jyos-characters-updated', onCharactersUpdated))
+onBeforeUnmount(() => {
+  window.removeEventListener('jyos-characters-updated', onCharactersUpdated)
+  window.removeEventListener('jyos-memories-updated', onMemoriesUpdated)
+})
+
+// 查手机写入记忆后，同步聊天页的副本，避免之后的保存把手机记忆覆盖掉
+function onMemoriesUpdated(event) {
+  if (event.detail && typeof event.detail === 'object') longTermMemories.value = event.detail
+}
 
 onBeforeUnmount(() => clearInterval(activityStatusTimer))
 
@@ -1619,11 +1977,15 @@ onMounted(async () => {
   const [savedCharacters, savedChats, savedChatConfig, savedMessages, savedPreferences, savedCharacterSettings, savedMoments, savedMomentSettings, savedLongTermMemories, savedFriendRemovedAt, savedFriendRequests] = await Promise.all([loadValue('jyos_characters'), loadValue('jyos_chat_contacts'), loadValue('jyos_chat_config'), loadValue('jyos_chat_messages'), loadValue('jyos_chat_preferences'), loadValue('jyos_character_chat_settings'), loadValue('jyos_moments'), loadValue('jyos_moments_settings'), loadValue('jyos_long_term_memories'), loadValue('jyos_friend_removed_at'), loadValue('jyos_friend_requests')])
   longTermMemories.value = savedLongTermMemories && typeof savedLongTermMemories === 'object' ? savedLongTermMemories : {}
   momentMemoryCursors.value = await loadValue('jyos_moment_memory_cursors') || {}
+  groupMemoryCursors.value = await loadValue('jyos_group_memory_cursors') || {}
   memoryStorageReady.value = true
+  await loadWorlds()
+  // 从桌面打开聊天 app 时，如果有待打开的提示，此时联系人已加载，可以直接定位
+  consumePendingNoticeChat()
   if (savedMomentSettings && typeof savedMomentSettings === 'object') {
     momentsSettings.value = { ...momentsSettings.value, ...savedMomentSettings }
   }
-  momentsSettings.value.interactionIntervalMinutes = Math.max(1, Math.min(1440, Number(momentsSettings.value.interactionIntervalMinutes) || 10))
+  momentsSettings.value.interactionIntervalMinutes = Math.max(1, Math.min(1440, Number(momentsSettings.value.interactionIntervalMinutes) || 30))
   loadMomentsAutoLastRun()
   loadMomentsInteractionLastRun()
   momentsSettingsReady.value = true
@@ -1661,6 +2023,7 @@ onMounted(async () => {
   chatPreferencesReady.value = true
   contacts.value = Array.isArray(savedCharacters) ? savedCharacters.filter((person) => person.name?.trim()) : []
   window.addEventListener('jyos-characters-updated', onCharactersUpdated)
+  window.addEventListener('jyos-memories-updated', onMemoriesUpdated)
   chatMessages.value = savedMessages && typeof savedMessages === 'object' && !Array.isArray(savedMessages) ? savedMessages : {}
   chatHistoryReady.value = true
   const savedPresets = Array.isArray(savedChatConfig?.presets)
@@ -1734,6 +2097,8 @@ onMounted(async () => {
     time: '', unread: 0, color: person.color || '#dededb', avatar: person.avatar || person.name.slice(0, 1),
     avatarImage: person.avatar || '',
   }))
+  loadGroupChats(await loadValue('jyos_group_chats'))
+  sections.value[0].chats = [...visibleGroups().map(groupChatItem), ...sections.value[0].chats]
   momentsAutoLastRun = 0
   loadMomentsAutoLastRun()
   momentsAutoTimer = setInterval(checkMomentsAutoGeneration, 15_000)
@@ -1980,11 +2345,43 @@ function confirmFictionalVisitors() {
 }
 function cancelFictionalVisitors() { fictionalVisitorsConfirmOpen.value = false }
 function normalizeMomentCharacterName(value) { return String(value || '').normalize('NFKC').replace(/[\s​-‍﻿]/g, '').trim() }
+// 取出第一个完整的 JSON 对象（按括号配对，忽略字符串内的花括号），模型在对象前后多写的文字会被忽略
+function extractFirstJsonObject(text) {
+  const start = text.indexOf('{')
+  if (start < 0) return null
+  let depth = 0, inString = false, escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+// 请求聊天接口；先带 response_format: json_object，服务商返回 400/422 时去掉该字段再请求一次
+async function requestMomentCompletion(preset, payload, signal) {
+  const url = `${preset.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` }
+  const send = (body) => fetch(url, { method: 'POST', signal, headers, body: JSON.stringify(body) })
+  let response = await send({ ...payload, response_format: { type: 'json_object' } })
+  if (!response.ok && [400, 422].includes(response.status)) response = await send(payload)
+  const data = await response.json().catch(() => ({}))
+  return { response, data }
+}
 function parseMomentGeneration(content) {
   const clean = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-  const start = clean.indexOf('{'), end = clean.lastIndexOf('}')
-  if (start < 0 || end <= start) throw new Error('生成结果不是有效 JSON。')
-  const parsed = JSON.parse(clean.slice(start, end + 1))
+  const json = extractFirstJsonObject(clean)
+  if (!json) throw new Error('生成结果不是有效 JSON。')
+  const parsed = JSON.parse(json)
   if (!Array.isArray(parsed.items)) throw new Error('生成结果缺少 items 数组。')
   return parsed.items.slice(0, 4).map((item) => ({ characterId: String(item?.characterId || ''), characterName: typeof item?.characterName === 'string' ? item.characterName.trim().slice(0, 64) : '', kind: ['post', 'comment', 'reply'].includes(item?.kind) ? item.kind : '', text: typeof item?.text === 'string' ? item.text.trim().slice(0, 500) : '', postId: String(item?.postId || ''), replyTo: item?.replyTo == null ? null : String(item.replyTo), authorName: typeof item?.authorName === 'string' ? item.authorName.trim().slice(0, 32) : '', likedBy: Array.isArray(item?.likedBy) ? item.likedBy.filter((name) => typeof name === 'string' && name.trim()).map((name) => name.trim().slice(0, 32)).slice(0, 8) : [] }))
 }
@@ -1999,7 +2396,13 @@ async function generateMomentActivity({ automatic = false, includePosts = moment
   const posts = momentsPosts.value.filter((post) => post.visibility !== '私密' && !post.excluded?.length && (post.visibility !== '部分好友可见' || (post.visibleFriends || []).some((name) => allContacts.some((character) => character.name === name))) && (post.authorType !== 'character' || allContacts.some((character) => visibleToCharacter(post, character)) || visitorsEnabled)).slice(0, 8)
   if (!allCandidates.length || ((!momentsSettings.value.characterPosts && !momentsSettings.value.characterInteractions && !visitorsEnabled) || (!momentsSettings.value.characterPosts && !posts.length))) { if (!automatic) showToast('目前没有符合可见范围和关系条件的动态'); return }
   const preset = getCurrentPreset()
-  if (!preset?.baseUrl?.trim() || !preset?.model?.trim() || !preset?.apiKey?.trim()) { momentsGenerationError.value = '请先配置 API 地址、模型和 API Key。'; return }
+  if (!preset?.baseUrl?.trim() || !preset?.model?.trim() || !preset?.apiKey?.trim()) {
+    // 自动模式只在角落提示一次状态并记录日志，不弹窗；手动模式照常弹出
+    const message = '请先配置 API 地址、模型和 API Key。'
+    if (automatic) { momentsAutoStatus.value = `自动生成已暂停：${message}`; console.warn('[moments auto]', message) }
+    else momentsGenerationError.value = message
+    return
+  }
   if (!automatic && !window.confirm('将使用当前 API 预设生成最多 4 条朋友圈内容，可能产生费用。是否继续？')) return
   const controller = new AbortController()
   momentsGenerationController.value = controller
@@ -2022,35 +2425,56 @@ async function generateMomentActivity({ automatic = false, includePosts = moment
       ? '参考 contacts 中的角色资料、对应角色的 stableMemories/recentMessages 和朋友圈上下文，自行判断适合发布动态的角色。记忆仅用于相关时的连续性，不要把不同角色的记忆混用；朋友圈互动须严格依照目标动态及其评论线程，不得臆造未发生的聊天事实或把推测说成确定事实。输出 JSON：{"items":[{"characterName":"角色名称","kind":"post","postId":"","replyTo":null,"text":"动态正文"}]}。characterName 必须照抄 contacts 中的角色名称；最多 4 条，每条正文不超过 200 字。没有合适内容就返回 {"items":[]}。'
       : '参考 contacts 中的角色资料、对应角色的 stableMemories/recentMessages 和朋友圈上下文，选择适合互动的角色。记忆仅用于相关时的连续性，不要把不同角色的记忆混用；每条互动必须严格依照目标动态及其评论线程，不得臆造未发生的聊天事实，不相关记忆不要强行提及，存在歧义时宁可不互动。reply 只能指向目标动态中真实存在的一级评论，不能回复另一条回复。输出 JSON：{"items":[{"characterName":"角色名称或访客名称","kind":"comment","postId":"动态ID","replyTo":null,"text":"评论内容"}]}。回复时 kind 用 reply，replyTo 填目标一级评论 ID；评论时 kind 用 comment、replyTo 填 null。characterName 必须照抄 contacts 中的角色名称；访客开启时可写自然访客名并填写 authorName。requiredMentionInteractions 中的角色优先评论对应动态。最多 4 条，没有合适互动就返回 {"items":[]}。')
 
-    const response = await fetch(`${preset.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` }, body: JSON.stringify({ model: preset.model, temperature: Number.isFinite(Number(chatConfig.value.preset.temperature)) ? Number(chatConfig.value.preset.temperature) : 1, stream: false, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(context) }] }) })
-    const data = await response.json().catch(() => ({}))
+    const { response, data } = await requestMomentCompletion(preset, { model: preset.model, temperature: Number.isFinite(Number(chatConfig.value.preset.temperature)) ? Number(chatConfig.value.preset.temperature) : 1, stream: false, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(context) }] }, controller.signal)
     if (!response.ok) throw new Error(data.error?.message || `API 请求失败（${response.status}）`)
     const content = data.choices?.[0]?.message?.content
     if (typeof content !== 'string') throw new Error('API 返回内容为空。')
     const parsedItems = parseMomentGeneration(content).map((item) => {
       const returnedName = normalizeMomentCharacterName(item.characterName)
-      const character = allContacts.find((candidate) => normalizeMomentCharacterName(candidate.name) === returnedName) || allContacts[0] || null
+      const character = allContacts.find((candidate) => normalizeMomentCharacterName(candidate.name) === returnedName) || null
       const isVisitor = !character && visitorsEnabled && ['comment', 'reply'].includes(item.kind)
       const visitorId = isVisitor ? `visitor-${Array.from(returnedName || item.authorName || '访客').reduce((hash, char) => ((hash * 31 + char.charCodeAt(0)) >>> 0), 0).toString(36)}` : ''
       return { ...item, characterId: character?.id || visitorId, authorName: item.authorName || item.characterName || '访客' }
     })
+    const actorIsVisitor = (item) => typeof item.characterId === 'string' && item.characterId.startsWith('visitor-')
+    // 每条动态下，每个角色或访客只能有一条一级评论（包括本次批次内已接受的）
+    const commentedBy = new Set()
+    for (const post of momentsPosts.value) {
+      for (const comment of post.comments || []) {
+        if (!comment.replyTo && ['character', 'visitor'].includes(comment.authorType)) commentedBy.add(`${post.id}:${comment.authorId}`)
+      }
+    }
     const valid = parsedItems.filter((item) => {
       if (!['post', 'comment', 'reply'].includes(item.kind) || !String(item.text || '').trim()) return false
       if (item.kind === 'post') return allContacts.some((character) => character.id === item.characterId)
+      if (!actorIsVisitor(item) && !allContacts.some((character) => character.id === item.characterId)) return false
       const post = momentsPosts.value.find((entry) => entry.id === item.postId)
       if (!post) return false
-      if (item.kind === 'comment') return !item.replyTo
+      if (item.kind === 'comment') {
+        if (item.replyTo) return false
+        // 不能评论自己发布的动态
+        if (post.authorType === 'character' && post.authorId === item.characterId) return false
+        const key = `${post.id}:${item.characterId}`
+        if (commentedBy.has(key)) return false
+        commentedBy.add(key)
+        return true
+      }
       const target = (post.comments || []).find((comment) => comment.id === item.replyTo)
-      return Boolean(target && !target.replyTo)
+      if (!target || target.replyTo) return false
+      // 不能回复自己的评论
+      if (['character', 'visitor'].includes(target.authorType) && target.authorId === item.characterId) return false
+      return true
     })
     if (!valid.length) {
-      if (automatic) momentsGenerationError.value = '没有可显示的内容：请检查 JSON 是否包含有效的 items、kind、text；评论和回复需要对应的 postId。'
-      else showToast('没有可显示的内容：检查 JSON 的 items、kind、text 和 postId')
+      // items 为空或全部被校验过滤，都是正常结果，不报错
+      if (!automatic) showToast('本次没有生成可显示的内容')
       return
     }
+    if (automatic) momentsAutoStatus.value = ''
     for (const item of valid) {
-      const isVisitor = typeof item.characterId === 'string' && item.characterId.startsWith('visitor-')
-      const character = isVisitor ? null : contacts.value.find((person) => person.id === item.characterId) || contacts.value[0] || null
+      const isVisitor = actorIsVisitor(item)
+      const character = isVisitor ? null : contacts.value.find((person) => person.id === item.characterId) || null
+      if (!isVisitor && !character) continue
       if (item.kind === 'post') {
         if (!character) continue
         momentsPosts.value.unshift({ id: momentId(), authorType: 'character', authorId: character.id, authorName: character.name, authorAvatar: character.avatar || '', source: 'ai', text: item.text, visibility: '公开', createdAt: Date.now(), time: momentTime(), likes: (item.likedBy || []).map((name) => ({ id: `npc-${name}`, name, authorType: 'npc' })), comments: [] })
@@ -2065,12 +2489,58 @@ async function generateMomentActivity({ automatic = false, includePosts = moment
     if (!automatic) showToast(`已显示 ${valid.length} 条朋友圈内容`)
 
   } catch (error) {
-    if (error.name !== 'AbortError') momentsGenerationError.value = error.message || '生成失败，请重试。'
+    if (error.name === 'AbortError') return
+    const message = error.message || '生成失败，请重试。'
+    if (automatic) { momentsAutoStatus.value = `自动生成未完成：${message}`; console.warn('[moments auto]', error) }
+    else momentsGenerationError.value = message
   } finally {
     momentsGeneratingPosts.value = false
     momentsGenerationController.value = null
   }
 }
+// 用户资料直接写进系统提示词，不依赖预设里是否有占位符，新旧预设都生效
+function userProfileBlock(profile) {
+  const text = profileToText(profile)
+  if (!profile || text.startsWith('（')) return ''
+  return `【用户资料】以下是用户本人的资料。你应当知道这些信息，并在合适的时候自然地运用（比如称呼、职业相关的话题），但不要逐条复述，也不要把资料当成台词素材。\n${text}`
+}
+
+// 角色所在世界里、该角色知道的其他角色：写进提示词，让角色在语境合适时可以主动提起，但不要反复提
+function worldKnowledgePrompt(characterId) {
+  const me = contacts.value.find((c) => c.id === characterId)
+  if (!me?.worldId) return ''
+  const known = knownBy(characterId)
+    .map((id) => contacts.value.find((c) => c.id === id))
+    .filter((c) => c && c.worldId === me.worldId)
+  if (!known.length) return ''
+  const world = worldOf(me.worldId)
+  // 只发送角色的世界摘要（summary），不发送详细设定（details），以节省 token
+  const lines = known.map((c) => `- ${c.name}${c.occupation ? `（${c.occupation}）` : ''}：${String(c.summary || '').replace(/\s+/g, ' ').slice(0, 160) || '暂无简介'}`)
+  return [
+    `【同一世界的人】${world ? `你们都生活在「${world.name}」里。` : ''}你认识下面这些人，他们是你的熟人或相识的人。`,
+    lines.join('\n'),
+    '提及他们要符合语境和情景：只在话题相关（如对方提到他们、或你们正好谈到相关的事）时自然地带一句，不要每轮都提，不要一直重复同一个人，也不要像列名单一样介绍他们。'
+  ].join('\n')
+}
+
+// 长期记忆注入聊天提示词：只取该角色的记忆，限制条数和总字数，避免提示词过长
+function longTermMemoryPrompt(characterId, { userName = '用户', characterName = '角色' } = {}) {
+  const list = Array.isArray(longTermMemories.value[characterId]) ? longTermMemories.value[characterId] : []
+  if (!list.length) return ''
+  // 记忆里可能残留 {{user}}、{{char}} 占位符，替换成真实名字
+  const fill = (text) => String(text || '').replaceAll('{{user}}', userName).replaceAll('<user>', userName).replaceAll('{{char}}', characterName).replaceAll('<char>', characterName)
+  const lines = []
+  let total = 0
+  for (const item of list.slice(0, 60)) {
+    const line = `- [${item.category || '重要记忆'}] ${fill(String(item.content || '').trim())}`
+    if (!item.content || total + line.length > 3000) break
+    lines.push(line)
+    total += line.length
+  }
+  if (!lines.length) return ''
+  return `【长期记忆】以下是你对用户和你们关系的长期记忆，回复时可以自然地延续，但不要逐条复述，也不要声称自己“看过手机”。\n${lines.join('\n')}`
+}
+
 function openMemoryConfig() {
   configPersonId.value = activeChat.value?.id || contacts.value[0]?.id || ''
   memoryConfigOpen.value = true
@@ -2078,6 +2548,80 @@ function openMemoryConfig() {
 async function persistLongTermMemories() {
   await saveValue('jyos_long_term_memories', JSON.parse(JSON.stringify(longTermMemories.value)))
 }
+// 角色在单聊里也能想起自己所在群的事：群的记忆，以及群里最近的对话
+function groupContextForCharacter(characterId, { userName }) {
+  const blocks = []
+  for (const group of groupChats.value.filter((item) => item.memberIds.includes(characterId))) {
+    const memory = memoryLinesOf(longTermMemories.value[group.id], { userName, characterName: group.name, maxChars: MEMORY_BUDGET.group })
+    if (memory) blocks.push(`【群「${group.name}」的记忆】\n${memory}`)
+    const recent = transcriptLines(chatMessages.value[group.id] || [], {
+      nameOf: (message) => (message.from === 'me' ? userName : message.speaker || '成员'),
+      maxChars: MEMORY_BUDGET.groupRecent,
+      maxLines: 80,
+    })
+    if (recent) blocks.push(`【群「${group.name}」的近期对话】\n你也是这个群的成员，可以记得群里发生过的事。这些是群聊内容，不是你和${userName}的单聊，回复时不要说成是单独对${userName}说过的话。\n${recent}`)
+  }
+  return blocks
+}
+
+// 群聊的长期记忆：只从群里的对话提取，写入群 id 对应的记忆列表。游标记录上次整理到的时间，避免重复调用。
+const GROUP_MEMORY_SYSTEM_PROMPT = '你是群聊长期记忆整理器。只保留对未来群聊持续有帮助、明确且有依据的信息：群里的约定与共同经历、成员之间的关系、用户在群里稳定表现出的偏好。不要记录临时琐事，不要猜测，不要记录互动次数。每条写成一句完整的话，用“用户”和成员名指代人物。只输出合法 JSON：{"memories":[{"category":"重要记忆","content":"..."}]}，最多 8 条，没有值得记的就输出 {"memories":[]}。'
+const groupMemoryCursors = ref({})
+async function generateGroupMemory(group, history) {
+  if (memoryGenerationBusy || !memoryStorageReady.value) return
+  const saved = longTermMemories.value[group.id] || []
+  const savedThrough = saved.reduce((latest, item) => Math.max(latest, Number(item.sourceThrough) || 0), 0)
+  const lastAt = Math.max(Number(groupMemoryCursors.value[group.id]) || 0, savedThrough)
+  const fresh = history.filter((item) => item.from === 'me' && (Number(item.timestamp) || Date.parse(item.timestamp) || 0) > lastAt).length
+  if (fresh < 8) return
+  const preset = getCurrentPreset()
+  if (!preset?.baseUrl?.trim() || !preset?.apiKey?.trim() || !preset?.model?.trim()) return
+  memoryGenerationBusy = true
+  try {
+    const sourceThrough = Date.now()
+    const conversation = transcriptLines(history, {
+      nameOf: (item) => (item.from === 'me' ? '用户' : item.speaker || '成员'),
+      maxLines: 80,
+      maxChars: 6000,
+      perLine: 200,
+    })
+    const response = await fetch(`${preset.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${preset.apiKey.trim()}` },
+      body: JSON.stringify({
+        model: preset.model,
+        temperature: 0.3,
+        stream: false,
+        messages: [
+          { role: 'system', content: GROUP_MEMORY_SYSTEM_PROMPT },
+          { role: 'user', content: `群名：${group.name}\n已有记忆（避免重复）：${JSON.stringify(saved.slice(0, 60).map((item) => item.content))}\n近期群聊：\n${conversation}` },
+        ],
+      }),
+    })
+    if (!response.ok) return
+    const data = await response.json().catch(() => ({}))
+    const content = data.choices?.[0]?.message?.content
+    const parsed = JSON.parse(String(content || '').replace(/^```(?:json)?\s*|\s*```$/g, '').trim())
+    groupMemoryCursors.value[group.id] = sourceThrough
+    await saveValue('jyos_group_memory_cursors', groupMemoryCursors.value)
+    const entries = Array.isArray(parsed.memories) ? parsed.memories : []
+    const existing = [...saved]
+    for (const entry of entries.slice(0, 8)) {
+      const text = typeof entry.content === 'string' ? entry.content.trim().slice(0, 500) : ''
+      if (!text || existing.some((item) => item.content === text)) continue
+      existing.unshift({ id: `memory-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, category: '重要记忆', content: text, createdAt: Date.now(), sourceThrough })
+    }
+    if (existing.length !== saved.length) {
+      longTermMemories.value[group.id] = existing.slice(0, 200)
+      await persistLongTermMemories()
+    }
+  } catch {
+    // 后台整理失败不打扰聊天，下一次回复会重新尝试
+  } finally {
+    memoryGenerationBusy = false
+  }
+}
+
 async function generateLongTermMemory(chat, history) {
   if (memoryGenerationBusy || !memoryStorageReady.value || !chat || history.filter((item) => item.from === 'me').length < 8) return
   const saved = longTermMemories.value[chat.id] || []
@@ -2106,7 +2650,7 @@ async function generateLongTermMemory(chat, history) {
     const content = data.choices?.[0]?.message?.content
     const parsed = JSON.parse(String(content || '').replace(/^```(?:json)?\\s*|\\s*```$/g, '').trim())
     const entries = Array.isArray(parsed.memories) ? parsed.memories : []
-    const allowed = new Set(['用户习惯', '重要记忆', '对话碎片', '朋友圈记忆'])
+    const allowed = new Set(['用户习惯', '重要记忆', '对话碎片', '朋友圈记忆', '手机记录'])
     const existing = [...saved]
     for (const entry of entries.slice(0, 8)) {
       const text = typeof entry.content === 'string' ? entry.content.trim().slice(0, 500) : ''
@@ -2381,6 +2925,8 @@ function confirmDeleteFriend() {
 // 删除好友：只从聊天列表移除，保留角色、聊天记录与设置；角色之后仍可重新申请加回
 function removeContact(person) {
   sections.value[0].chats = sections.value[0].chats.filter((chat) => chat.id !== person.id)
+  // 解除好友后，把该角色从所有群的成员里移出
+  void pruneGroupMembers((id) => isFriend(id))
   // 记录删除时间，供 AI 主动发起好友申请使用
   friendRemovedAt.value = { ...friendRemovedAt.value, [person.id]: Date.now() }
 }
@@ -2466,13 +3012,6 @@ function dismissFriendRequest(request) {
 
 <template>
   <div class="chat-app" :class="{ 'chat-list-home': currentTab === '聊天' }" :style="chatAppearanceStyle">
-    <div v-if="replyNotices.length" class="reply-notice-stack" aria-live="polite" aria-label="新消息">
-      <button v-for="(notice, index) in replyNotices" :key="notice.id" type="button" class="reply-notice" :style="{ '--stack-index': index }" :aria-label="`打开${chatDisplayName(notice.chat)}的聊天`" @click="openNoticeChat(notice)">
-        <span class="notice-avatar" :class="{ 'avatar-placeholder': !notice.chat.avatarImage }" :style="{ '--avatar-color': notice.chat.color }"><img v-if="notice.chat.avatarImage" :src="notice.chat.avatarImage" alt="" /><span v-else></span></span>
-        <span class="notice-copy"><strong>{{ chatDisplayName(notice.chat) }}</strong><span>{{ notice.text }}</span></span>
-        <span class="notice-time">现在</span>
-      </button>
-    </div>
     <header class="topbar" :class="{ 'moments-topbar': currentTab === '朋友圈', 'chat-list-topbar': currentTab === '聊天' }">
       <button v-if="currentTab !== '聊天'" class="back-button" aria-label="返回桌面" @click="emit('close')"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
       <div class="topbar-spacer" />
@@ -2481,6 +3020,7 @@ function dismissFriendRequest(request) {
         <svg viewBox="0 0 24 24" aria-hidden="true" stroke-linejoin="round"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h2l1.4-2h4.2l1.4 2h2A2.5 2.5 0 0 1 20 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-10Z"/><circle cx="12" cy="12" r="4"/></svg>
       </button>
     </header>
+    <button v-if="currentTab === '聊天'" type="button" class="chat-list-add-action" aria-label="创建群聊" @click="openGroupCreate"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     <button v-if="currentTab === '聊天'" class="round-action chat-list-search-action" aria-label="搜索人物" @click="openFriendSearch"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg></button>
 
     <main class="chat-content">
@@ -2517,10 +3057,9 @@ function dismissFriendRequest(request) {
           </section>
         </div>
         <section v-for="section in filteredSections" :key="section.title" class="chat-section">
-          <button class="section-toggle" type="button" :aria-expanded="section.open" @click="sections.find((item) => item.title === section.title).open = !section.open"><svg class="chevron" :class="{ folded: !sections.find((item) => item.title === section.title).open }" viewBox="0 0 20 20"><path d="m5 7 5 5 5-5"/></svg><span>{{ section.title }}</span><small>{{ section.chats.length }}</small><svg class="section-end" viewBox="0 0 20 20"><path d="m7 5 5 5-5 5"/></svg></button>
           <div v-if="sections.find((item) => item.title === section.title).open" class="chat-card">
             <button v-for="chat in section.chats" :key="chat.id" class="conversation" type="button" @click="openChat(chat)">
-              <span class="avatar" :class="{ 'avatar-placeholder': !chat.avatarImage }" :style="{'--avatar-color':chat.color}"><img v-if="chat.avatarImage" :src="chat.avatarImage" :alt="`${chat.name}头像`"/><span v-else></span><i class="online-dot" aria-label="在线"/><i v-if="chat.group" class="group-mark">群</i></span>
+              <span class="avatar" :class="{ 'avatar-placeholder': !chat.avatarImage }" :style="{'--avatar-color':chat.color}"><img v-if="chat.avatarImage" :src="chat.avatarImage" :alt="`${chat.name}头像`"/><span v-else></span><i v-if="!chat.group" class="online-dot" aria-label="在线"/><i v-if="chat.group" class="group-mark">群</i></span>
               <span class="conversation-copy"><span class="conversation-top"><strong>{{ chatDisplayName(chat) }}</strong><time>{{ chat.time || '最近' }}</time></span><span class="conversation-bottom"><span>{{ chatLatestMessage(chat) }}</span><i v-if="chat.unread" class="unread-count">{{ chat.unread > 99 ? '99+' : chat.unread }}</i></span></span>
             </button>
           </div>
@@ -2547,6 +3086,7 @@ function dismissFriendRequest(request) {
       </section>
       <section v-else class="my-page">
         <div v-if="momentsGeneratingPosts" class="moment-generation-progress" role="status"><span class="moment-generation-spinner" aria-hidden="true"></span><span>正在生成朋友圈内容…</span><button type="button" @click="momentsGenerationController?.abort()">取消</button></div>
+        <div v-if="momentsAutoStatus" class="moment-auto-status" role="status" style="font-size: 12px; color: #8a8f98; padding: 6px 12px;">{{ momentsAutoStatus }}</div>
     <div v-if="momentsGenerationError" class="moment-subdialog-backdrop moment-generation-error-backdrop" @click.self="momentsGenerationError = ''"><section class="moment-subdialog moment-generation-error-card" role="alertdialog" aria-modal="true" aria-labelledby="moment-generation-error-title"><header><strong id="moment-generation-error-title">生成未完成</strong><button type="button" @click="momentsGenerationError = ''">关闭</button></header><p role="alert">{{ momentsGenerationError }}</p><button class="moment-generation-error-confirm" type="button" @click="momentsGenerationError = ''">知道了</button></section></div>
         <div class="my-profile-avatar" aria-label="我的头像" style="margin-bottom: 28px;">
           <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="我的头像" />
@@ -2598,14 +3138,14 @@ function dismissFriendRequest(request) {
           <div class="moments-interval-control" :class="{ disabled: !momentsSettings.enabled || !momentsSettings.autoGenerate }">
             <div class="moments-interval-heading"><span>自动生成间隔</span><strong>{{ momentsSettings.generationIntervalMinutes }} 分钟</strong></div>
             <input v-model.number="momentsSettings.generationIntervalMinutes" class="moments-interval-slider" type="range" min="1" max="1440" step="1" aria-label="自动生成间隔分钟数" :disabled="!momentsSettings.enabled || !momentsSettings.autoGenerate" />
-            <div class="moments-interval-custom"><span>自定义分钟数</span><input v-model.number="momentsSettings.generationIntervalMinutes" type="number" min="1" max="1440" step="1" aria-label="自定义自动生成间隔分钟数" :disabled="!momentsSettings.enabled || !momentsSettings.autoGenerate" @change="momentsSettings.generationIntervalMinutes = Math.max(1, Math.min(1440, Math.round(Number(momentsSettings.generationIntervalMinutes) || 40)))" /></div>
-            <small>范围 1–1440 分钟；默认 40 分钟，设置会保存在本机。</small>
+            <div class="moments-interval-custom"><span>自定义分钟数</span><input v-model.number="momentsSettings.generationIntervalMinutes" type="number" min="1" max="1440" step="1" aria-label="自定义自动生成间隔分钟数" :disabled="!momentsSettings.enabled || !momentsSettings.autoGenerate" @change="momentsSettings.generationIntervalMinutes = Math.max(1, Math.min(1440, Math.round(Number(momentsSettings.generationIntervalMinutes) || 120)))" /></div>
+            <small>范围 1–1440 分钟；默认 120 分钟，设置会保存在本机。按当前设置，每天约 {{ momentsDailyRequestEstimate }} 次请求（上限估算）。</small>
           </div>
           <div class="moments-interval-control" :class="{ disabled: !momentsSettings.enabled || !momentsSettings.autoGenerate || (!momentsSettings.characterInteractions && !momentsSettings.fictionalVisitors) }">
             <div class="moments-interval-heading"><span>评论与回复间隔</span><strong>{{ momentsSettings.interactionIntervalMinutes }} 分钟</strong></div>
             <input v-model.number="momentsSettings.interactionIntervalMinutes" class="moments-interval-slider" type="range" min="1" max="1440" step="1" aria-label="评论与回复间隔分钟数" :disabled="!momentsSettings.enabled || !momentsSettings.autoGenerate || (!momentsSettings.characterInteractions && !momentsSettings.fictionalVisitors)" />
-            <div class="moments-interval-custom"><span>自定义分钟数</span><input v-model.number="momentsSettings.interactionIntervalMinutes" type="number" min="1" max="1440" step="1" aria-label="自定义评论与回复间隔分钟数" :disabled="!momentsSettings.enabled || !momentsSettings.autoGenerate || (!momentsSettings.characterInteractions && !momentsSettings.fictionalVisitors)" @change="momentsSettings.interactionIntervalMinutes = Math.max(1, Math.min(1440, Math.round(Number(momentsSettings.interactionIntervalMinutes) || 10)))" /></div>
-            <small>与角色发动态的间隔独立计算；默认 10 分钟，设置会保存在本机。</small>
+            <div class="moments-interval-custom"><span>自定义分钟数</span><input v-model.number="momentsSettings.interactionIntervalMinutes" type="number" min="1" max="1440" step="1" aria-label="自定义评论与回复间隔分钟数" :disabled="!momentsSettings.enabled || !momentsSettings.autoGenerate || (!momentsSettings.characterInteractions && !momentsSettings.fictionalVisitors)" @change="momentsSettings.interactionIntervalMinutes = Math.max(1, Math.min(1440, Math.round(Number(momentsSettings.interactionIntervalMinutes) || 30)))" /></div>
+            <small>与角色发动态的间隔独立计算；默认 30 分钟，设置会保存在本机。</small>
           </div>
           <div class="preference-note"><span>✦</span> 自动运行将直接调用当前 API 预设并可能产生费用；频率是最短间隔，不保证准点执行。关闭页面不补跑，浏览器可能节流后台标签页。</div>
         </section>
@@ -2624,7 +3164,7 @@ function dismissFriendRequest(request) {
         <section class="conversation-page">
           <header class="conversation-header">
             <button class="conversation-back" aria-label="返回聊天列表" @click="leaveConversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg></button>
-            <div class="conversation-identity-copy"><h1 class="conversation-title">{{ chatDisplayName(activeChat) }}</h1><span class="conversation-subtitle"><i v-if="!characterTyping" class="conversation-online-dot" aria-hidden="true"></i><template v-if="characterTyping">对方正在输入中</template><template v-else>在线<template v-if="activityStatusOf()"> <span class="conversation-subtitle-separator">·</span> <span class="conversation-subtitle-emoji" aria-hidden="true">{{ activityStatusOf().emoji }}</span>{{ activityStatusOf().text }}</template> <span class="conversation-chevron" aria-hidden="true">›</span></template></span></div>
+            <div class="conversation-identity-copy"><h1 class="conversation-title">{{ chatDisplayName(activeChat) }}</h1><span class="conversation-subtitle"><i v-if="!characterTyping" class="conversation-online-dot" aria-hidden="true"></i><template v-if="characterTyping">对方正在输入中</template><template v-else-if="isGroupId(activeChat.id)">{{ groupSubtitle() }}</template><template v-else>在线<template v-if="activityStatusOf()"> <span class="conversation-subtitle-separator">·</span> <span class="conversation-subtitle-emoji" aria-hidden="true">{{ activityStatusOf().emoji }}</span>{{ activityStatusOf().text }}</template> <span class="conversation-chevron" aria-hidden="true">›</span></template></span></div>
             <button type="button" class="conversation-theme-toggle" :aria-label="conversationTheme === 'night' ? '切换到日间模式' : '切换到夜间模式'" :title="conversationTheme === 'night' ? '日间模式' : '夜间模式'" @click="conversationTheme = conversationTheme === 'night' ? 'day' : 'night'"><svg v-if="conversationTheme === 'night'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg><svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 0 1 8.7 3.5 8.5 8.5 0 1 0 20.5 15.3Z"/></svg></button>
             <button v-if="statusBarEnabled()" type="button" class="conversation-status-button" aria-label="查看角色状态" :disabled="!latestCharacterStatus" @click="openCharacterStatus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5 3 21v-5.2A8.5 8.5 0 1 1 7 18.5Z"/><circle cx="9" cy="11" r=".7"/><circle cx="12" cy="11" r=".7"/><circle cx="15" cy="11" r=".7"/></svg></button>
             <div class="conversation-actions"><button class="conversation-settings" aria-label="更多聊天选项" @click="openChatSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button></div>
@@ -2634,9 +3174,9 @@ function dismissFriendRequest(request) {
             <template v-for="(message, index) in visibleMessages" :key="visibleMessageOffset + index">
             <div v-if="shouldShowTimestamp(index)" class="chat-time-divider">{{ messageTime(message) }}</div>
             <div class="message-row" :class="[message.from, { 'has-tail': isLastInRun(visibleMessageOffset + index), 'message-selected': selectedMessages.includes(visibleMessageOffset + index) }]" @pointerdown="!multiDeleteMode && startMessagePress(visibleMessageOffset + index, $event)" @pointerup="cancelMessagePress" @pointerleave="cancelMessagePress" @pointercancel="cancelMessagePress" @contextmenu.prevent="openMessageMenu(visibleMessageOffset + index, $event)" @click.capture="handleMessageSelectionClick(visibleMessageOffset + index, $event)" @click="suppressMessageClick($event)">
-              <span v-if="message.from === 'them'" class="tiny-avatar" :class="{ 'avatar-placeholder': !activeChat.avatarImage }" :style="{'--avatar-color': activeChat.color}"><img v-if="activeChat.avatarImage" :src="activeChat.avatarImage" alt=""/><span v-else></span></span>
+              <span v-if="message.from === 'them'" class="tiny-avatar" :class="{ 'avatar-placeholder': !speakerOf(message).avatarImage }" :style="{'--avatar-color': speakerOf(message).color}"><img v-if="speakerOf(message).avatarImage" :src="speakerOf(message).avatarImage" alt=""/><span v-else></span></span>
               <span v-else class="tiny-avatar user-tiny-avatar"><img v-if="activeUserAvatar" :src="activeUserAvatar" alt="我的头像"/><span v-else></span></span>
-              <div class="message-content-stack"><div class="message-bubble-wrap"><template v-if="message.type === 'text-image'"><button type="button" class="text-image-card" :aria-label="`打开来自${message.from === 'me' ? '我' : activeChat.name}的文字图`" @click.stop="polaroidPreview = { content: message.content, from: message.from }"><span class="text-image-body">{{ message.content }}</span></button></template>            <template v-else-if="message.type === 'system-instruction'"><div class="system-instruction-note"><span>系统指令</span>{{ message.content }}</div></template><template v-else-if="message.type === 'file'"><button type="button" class="document-file-card" @click.stop="documentPreview = message"><span class="document-file-icon">W</span><span class="document-file-copy"><strong>{{ message.fileName || '角色文档.txt' }}</strong><small>{{ message.content?.length || 0 }} 字符 · 点击查看</small></span><span class="document-file-arrow">›</span></button></template><template v-else-if="message.type === 'transfer'"><button type="button" class="transfer-card" :disabled="message.from === 'me'" @click.stop="message.from === 'them' && (transferActionDialog = visibleMessageOffset + index)"><span class="transfer-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.3-.9-1.2-1.5-2.5-1.5-1.5 0-2.6.8-2.6 1.9 0 2.6 5.2 1.3 5.2 3.9 0 1.1-1.1 1.9-2.6 1.9-1.3 0-2.3-.6-2.6-1.6M12 6.5v1.3M12 16.2v1.3"/></svg></span><span class="transfer-copy"><strong>{{ message.from === 'me' ? '我的转账' : '转账' }}</strong><b>¥{{ Number(message.amount).toFixed(2) }}</b><small>{{ message.transferStatus || (message.from === 'me' ? '等待对方收款' : '待处理') }}</small></span></button></template><template v-else-if="message.type === 'voice'"><div class="voice-bubble" :class="{ 'voice-bubble-outgoing': message.from === 'me' }"><div class="voice-message-card"><button type="button" class="voice-play-button" :aria-label="message.from === 'me' ? '播放我的语音' : '语音条'" :disabled="message.from === 'me' && !message.audioData && !message.audioUrl" @click.stop="playVoiceMessage(message, visibleMessageOffset + index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button><span class="voice-wave" :class="{ playing: playingVoiceIndex === visibleMessageOffset + index }" :style="{ '--voice-progress': `${playingVoiceIndex === visibleMessageOffset + index ? voiceProgress * 100 : 0}%` }" aria-hidden="true"><i v-for="bar in 18" :key="bar" :style="{ '--bar-height': `${8 + ((bar * 13) % 17)}px` }" /></span></div><Transition name="voice-transcript-expand"><p v-if="(message.from === 'me' && message.transcript) || (message.from === 'them' && expandedVoiceTranscript === visibleMessageOffset + index && message.transcript)" class="voice-transcript">{{ message.transcript }}<span v-if="message.from === 'them' && message.voiceDescription" class="voice-description">{{ message.voiceDescription.startsWith('（') ? message.voiceDescription : `（${message.voiceDescription}）` }}</span></p></Transition></div><p v-if="message.from === 'me' && message.voiceImpression" class="voice-impression">声音印象：{{ message.voiceImpression }}</p></template><template v-else-if="message.type === 'image'"><button type="button" class="image-message-card" @click.stop="imagePreview = message.imageData"><img :src="message.imageData" alt="用户发送的图片" /></button></template><template v-else><div class="message-bubble"><div v-if="message.replyTo" class="quoted-message"><strong>{{ message.replyTo.from === 'me' ? '我' : activeChat.name }}</strong><span>{{ message.replyTo.text }}</span></div><span class="message-text">{{ message.text }}</span><span v-if="message.translation" class="message-translation-inside" @click.stop="toggleMessageTranslation(message)">{{ message.translationVisible ? message.translation : '查看译文' }}</span><span v-if="normalizeReaction(message.reaction)" class="message-reaction" :class="{ 'character-reaction': message.from === 'them' }" :aria-label="`反应：${normalizeReaction(message.reaction)}`">{{ normalizeReaction(message.reaction) }}</span></div></template></div>
+              <div class="message-content-stack"><span v-if="isGroupId(activeChat.id) && message.from === 'them' && message.speaker" class="group-speaker-name">{{ message.speaker }}</span><div class="message-bubble-wrap"><template v-if="message.type === 'forward'"><div class="forward-card" :aria-label="`转发的聊天记录，来自${message.fromName}`"><span class="forward-card-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5l6 6-6 6"/><path d="M4 11h11a5 5 0 0 1 5 5v3"/></svg>聊天记录</span><strong>来自 {{ message.fromName }}</strong><small>{{ (message.transcript || '').split('\n').length }} 条消息</small></div></template><template v-else-if="message.type === 'text-image'"><button type="button" class="text-image-card" :aria-label="`打开来自${message.from === 'me' ? '我' : speakerOf(message).name}的文字图`" @click.stop="polaroidPreview = { content: message.content, from: message.from }"><span class="text-image-body">{{ message.content }}</span></button></template>            <template v-else-if="message.type === 'system-instruction'"><div class="system-instruction-note"><span>系统指令</span>{{ message.content }}</div></template><template v-else-if="message.type === 'file'"><button type="button" class="document-file-card" @click.stop="documentPreview = message"><span class="document-file-icon">W</span><span class="document-file-copy"><strong>{{ message.fileName || '角色文档.txt' }}</strong><small>{{ message.content?.length || 0 }} 字符 · 点击查看</small></span><span class="document-file-arrow">›</span></button></template><template v-else-if="message.type === 'transfer'"><button type="button" class="transfer-card" :disabled="message.from === 'me'" @click.stop="message.from === 'them' && (transferActionDialog = visibleMessageOffset + index)"><span class="transfer-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.3-.9-1.2-1.5-2.5-1.5-1.5 0-2.6.8-2.6 1.9 0 2.6 5.2 1.3 5.2 3.9 0 1.1-1.1 1.9-2.6 1.9-1.3 0-2.3-.6-2.6-1.6M12 6.5v1.3M12 16.2v1.3"/></svg></span><span class="transfer-copy"><strong>{{ message.from === 'me' ? '我的转账' : '转账' }}</strong><b>¥{{ Number(message.amount).toFixed(2) }}</b><small>{{ message.transferStatus || (message.from === 'me' ? '等待对方收款' : '待处理') }}</small></span></button></template><template v-else-if="message.type === 'voice'"><div class="voice-bubble" :class="{ 'voice-bubble-outgoing': message.from === 'me' }"><div class="voice-message-card"><button type="button" class="voice-play-button" :aria-label="message.from === 'me' ? '播放我的语音' : '语音条'" :disabled="message.from === 'me' && !message.audioData && !message.audioUrl" @click.stop="playVoiceMessage(message, visibleMessageOffset + index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></button><span class="voice-wave" :class="{ playing: playingVoiceIndex === visibleMessageOffset + index }" :style="{ '--voice-progress': `${playingVoiceIndex === visibleMessageOffset + index ? voiceProgress * 100 : 0}%` }" aria-hidden="true"><i v-for="bar in 18" :key="bar" :style="{ '--bar-height': `${8 + ((bar * 13) % 17)}px` }" /></span></div><Transition name="voice-transcript-expand"><p v-if="(message.from === 'me' && message.transcript) || (message.from === 'them' && expandedVoiceTranscript === visibleMessageOffset + index && message.transcript)" class="voice-transcript">{{ message.transcript }}<span v-if="message.from === 'them' && message.voiceDescription" class="voice-description">{{ message.voiceDescription.startsWith('（') ? message.voiceDescription : `（${message.voiceDescription}）` }}</span></p></Transition></div><p v-if="message.from === 'me' && message.voiceImpression" class="voice-impression">声音印象：{{ message.voiceImpression }}</p></template><template v-else-if="message.type === 'image'"><button type="button" class="image-message-card" @click.stop="imagePreview = message.imageData"><img :src="message.imageData" alt="用户发送的图片" /></button></template><template v-else><div class="message-bubble"><div v-if="message.replyTo" class="quoted-message"><strong>{{ message.replyTo.from === 'me' ? '我' : activeChat.name }}</strong><span>{{ message.replyTo.text }}</span></div><span class="message-text">{{ message.text }}</span><span v-if="message.translation" class="message-translation-inside" @click.stop="toggleMessageTranslation(message)">{{ message.translationVisible ? message.translation : '查看译文' }}</span><span v-if="normalizeReaction(message.reaction)" class="message-reaction" :class="{ 'character-reaction': message.from === 'them' }" :aria-label="`反应：${normalizeReaction(message.reaction)}`">{{ normalizeReaction(message.reaction) }}</span></div></template></div>
                 <time v-if="isLastInRun(index)" class="message-timestamp" :class="message.from">{{ messageTime(message) }}</time>
 
               </div>
@@ -2662,7 +3202,8 @@ function dismissFriendRequest(request) {
                 <input ref="imageInput" class="hidden-image-input" type="file" accept="image/*" aria-label="选择图片" @change="handleImageSelected" />
               </form>
             </div>
-              <div v-if="attachmentOpen" class="attachment-inline"><section class="attachment-panel attachment-inline-panel" role="dialog" aria-modal="true" aria-label="更多功能" @click.stop><div class="attachment-handle" aria-hidden="true"></div><h2>更多功能</h2><div class="attachment-actions"><button type="button" @click="openComposerDialog('text-image')"><span class="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg></span><span>文字图</span></button><button type="button" @click="openComposerDialog('transfer')"><span class="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 7.5 3.5 4 3.5-4M12 11.5v5M9 12h6M9 15h6"/></svg></span><span>转账</span></button><button type="button" @click="openSystemInstructionDialog"><span class="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span><span>系统指令</span></button></div></section></div>
+              <div v-if="attachmentOpen" class="attachment-inline"><section class="attachment-panel attachment-inline-panel" role="dialog" aria-modal="true" aria-label="更多功能" @click.stop><div class="attachment-handle" aria-hidden="true"></div><h2>更多功能</h2><div class="attachment-actions"><button type="button" @click="openComposerDialog('text-image')"><span class="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg></span><span>文字图</span></button><button type="button" @click="openComposerDialog('transfer')"><span class="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 7.5 3.5 4 3.5-4M12 11.5v5M9 12h6M9 15h6"/></svg></span><span>转账</span></button><button type="button" @click="openForwardDialog"><span class="attachment-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5l6 6-6 6"/><path d="M4 11h11a5 5 0 0 1 5 5v3"/></svg></span><span>转发聊天</span></button>
+<button type="button" @click="openSystemInstructionDialog"><span class="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span><span>系统指令</span></button></div></section></div>
         </section>
       </div>
     </transition>
@@ -2803,8 +3344,11 @@ function dismissFriendRequest(request) {
       <div v-if="documentPreview" class="document-viewer-overlay" role="dialog" aria-modal="true" aria-label="文档查看器" @click.self="documentPreview = null"><section class="document-viewer"><header class="document-viewer-header"><button type="button" aria-label="关闭文档" @click="documentPreview = null">‹</button><span>文档预览</span><i></i></header><div class="document-toolbar"><span>W</span><strong>{{ documentPreview.fileName || '角色文档.txt' }}</strong><button type="button" @click="copyDocument">复制</button><button type="button" @click="downloadDocument">下载</button></div><article class="document-page"><h1>{{ documentPreview.fileName || '文档' }}</h1><pre>{{ documentPreview.content }}</pre></article></section></div>
       <div v-if="imagePreview" class="acrylic-overlay image-preview-overlay" role="dialog" aria-modal="true" aria-label="图片预览" @click.self="imagePreview = null"><button type="button" class="image-preview-close" aria-label="关闭图片预览" @click="imagePreview = null">×</button><div class="image-preview-dialog"><img :src="imagePreview" alt="图片预览" /></div></div>
     
-    <div v-if="systemInstructionDialog" class="system-instruction-overlay" role="presentation" @click.self="systemInstructionDialog = false"><section class="system-instruction-card" role="dialog" aria-modal="true" aria-labelledby="system-instruction-title"><div class="system-instruction-eyebrow">CHAT · PERSONALIZE</div><header><div><h2 id="system-instruction-title">调整回复方向</h2><p>为 {{ activeChat?.name || '当前聊天' }} 添加专属指令</p></div><button type="button" aria-label="关闭" @click="systemInstructionDialog = false">×</button></header><p class="system-instruction-hint">告诉角色你希望如何表达、关注什么，或避免哪些回复倾向。角色设定与对话事实仍会优先保留。</p><textarea v-model="systemInstructionDraft" maxlength="5000" autofocus placeholder="例如：回复更简洁自然；讨论问题时先回应我的具体感受，不要急着给建议。"/><div class="system-instruction-meta"><span>仅作用于当前角色的聊天</span><span>{{ systemInstructionDraft.length }} / 5000</span></div><footer><button type="button" class="system-instruction-clear" @click="systemInstructionDraft = ''">清空</button><span/><button type="button" @click="systemInstructionDialog = false">取消</button><button type="button" class="system-instruction-save" @click="saveSystemInstruction">发送</button></footer></section></div>
-    <div v-if="composerDialog" class="acrylic-overlay" @click.self="composerDialog = null"><section class="message-edit-dialog feature-dialog" :class="{ 'text-image-dialog': composerDialog.type === 'text-image', 'transfer-compose-dialog': composerDialog.type === 'transfer' }" role="dialog" aria-modal="true"><h3>{{ composerDialog.type === 'text-image' ? '发送文字图' : '发起转账' }}</h3><label v-if="composerDialog.type === 'text-image'" class="feature-field"><span>文字图内容</span><textarea v-model="composerDialog.content" rows="5" placeholder="描述画面、视角和氛围…" /></label><label v-else class="feature-field"><span>转账金额（元）</span><input v-model="composerDialog.amount" type="number" min="0.01" step="0.01" placeholder="输入金额" /></label><footer><button type="button" @click="composerDialog = null">取消</button><button class="feature-send-button" type="button" :disabled="composerDialog.type === 'text-image' ? !composerDialog.content.trim() : !(Number(composerDialog.amount) > 0)" @click="submitComposerItem">发送</button></footer></section></div>
+    <div v-if="systemInstructionDialog" class="system-instruction-overlay" role="presentation" @click.self="systemInstructionDialog = false"><section class="system-instruction-card" role="dialog" aria-modal="true" aria-labelledby="system-instruction-title"><div class="system-instruction-eyebrow">CHAT · PERSONALIZE</div><header><div><h2 id="system-instruction-title">调整回复方向</h2><p>为 {{ activeChat?.name || '当前聊天' }} 添加专属指令</p></div><button type="button" aria-label="关闭" @click="systemInstructionDialog = false">×</button></header><p class="system-instruction-hint">告诉角色你希望如何表达、关注什么，或避免哪些回复倾向。角色设定与对话事实仍会优先保留。</p><textarea v-model="systemInstructionDraft" maxlength="5000" autofocus placeholder="例如：回复更简洁自然；讨论问题时先回应我的具体感受，不要急着给建议。"/><div class="system-instruction-meta"><span>仅作用于当前聊天</span><span>{{ systemInstructionDraft.length }} / 5000</span></div><footer><button type="button" class="system-instruction-clear" @click="systemInstructionDraft = ''">清空</button><span/><button type="button" @click="systemInstructionDialog = false">取消</button><button type="button" class="system-instruction-save" @click="saveSystemInstruction">发送</button></footer></section></div>
+    <GroupCreatePage v-if="groupCreateOpen" :friends="groupFriendOptions" @close="groupCreateOpen = false" @created="onGroupCreated" />
+    <GroupSettingsPage v-if="groupSettingsOpen && activeGroup" :group="activeGroup" :members="groupMembers" :candidates="groupCandidates" @close="groupSettingsOpen = false" @patch="onGroupPatch" @leave="onGroupLeave" @delete="onGroupDelete" />
+    <div v-if="forwardDialog" class="acrylic-overlay forward-overlay" @click.self="forwardDialog = null"><section class="forward-sheet" role="dialog" aria-modal="true" aria-label="转发聊天记录"><header class="forward-head"><button type="button" class="forward-back" v-if="forwardDialog.step !== 'source'" aria-label="返回上一步" @click="forwardDialog = forwardDialog.step === 'target' ? { ...forwardDialog, step: 'messages' } : { step: 'source', sourceId: '', picked: [] }">‹</button><h2>{{ forwardDialog.step === 'source' ? '选择要转发的聊天' : forwardDialog.step === 'messages' ? '选择要转发的消息' : '转发给谁' }}</h2><button type="button" class="forward-close" aria-label="关闭" @click="forwardDialog = null">×</button></header><template v-if="forwardDialog.step === 'source'"><p class="forward-hint">选择一个角色或群，挑出聊天里的几条消息，转发给另一个角色或群。</p><ul class="forward-list"><li v-for="person in forwardSourceOptions" :key="person.id"><button type="button" @click="chooseForwardSource(person.id)"><span class="forward-avatar" :style="{ background: person.color || '#dededb' }">{{ (person.name || '?').slice(0, 1) }}</span><span>{{ person.name || '未命名' }}</span></button></li></ul></template><template v-else-if="forwardDialog.step === 'messages'"><p class="forward-hint">与 {{ forwardEntityName(forwardDialog.sourceId) }} 的聊天，勾选要转发的消息（已选 {{ forwardDialog.picked.length }} 条）。</p><button v-if="forwardableMessages(forwardDialog.sourceId).length > forwardWindow.length" type="button" class="forward-more" @click="loadMoreForward">加载更早的消息</button><ul ref="forwardPickRef" class="forward-pick"><li v-for="entry in forwardWindow" :key="entry.index"><label :class="{ on: forwardDialog.picked.includes(entry.index) }"><input type="checkbox" :checked="forwardDialog.picked.includes(entry.index)" @change="togglePickForward(entry.index)" /><span class="forward-pick-who">{{ entry.message.from === 'me' ? '我' : entry.message.speaker || forwardEntityName(forwardDialog.sourceId) }}</span><span class="forward-pick-text">{{ String(entry.message.text).slice(0, 80) }}</span></label></li></ul><p v-if="!forwardWindow.length" class="forward-hint">这个角色还没有聊天记录。</p><div class="forward-actions"><button type="button" class="forward-next" :disabled="!forwardDialog.picked.length" @click="confirmForwardPicks">下一步</button></div></template><template v-else><p class="forward-hint">把已选的 {{ forwardDialog.picked.length }} 条消息转发给：</p><ul class="forward-list"><li v-for="person in forwardSourceOptions.filter((c) => c.id !== forwardDialog.sourceId)" :key="person.id"><button type="button" @click="submitForward(person.id)"><span class="forward-avatar" :style="{ background: person.color || '#dededb' }">{{ (person.name || '?').slice(0, 1) }}</span><span>{{ person.name || '未命名' }}</span></button></li></ul></template></section></div>
+<div v-if="composerDialog" class="acrylic-overlay" @click.self="composerDialog = null"><section class="message-edit-dialog feature-dialog" :class="{ 'text-image-dialog': composerDialog.type === 'text-image', 'transfer-compose-dialog': composerDialog.type === 'transfer' }" role="dialog" aria-modal="true"><h3>{{ composerDialog.type === 'text-image' ? '发送文字图' : '发起转账' }}</h3><label v-if="composerDialog.type === 'text-image'" class="feature-field"><span>文字图内容</span><textarea v-model="composerDialog.content" rows="5" placeholder="描述画面、视角和氛围…" /></label><label v-else class="feature-field"><span>转账金额（元）</span><input v-model="composerDialog.amount" type="number" min="0.01" step="0.01" placeholder="输入金额" /></label><footer><button type="button" @click="composerDialog = null">取消</button><button class="feature-send-button" type="button" :disabled="composerDialog.type === 'text-image' ? !composerDialog.content.trim() : !(Number(composerDialog.amount) > 0)" @click="submitComposerItem">发送</button></footer></section></div>
     <div v-if="transferActionDialog !== null" class="acrylic-overlay" @click.self="transferActionDialog = null"><section class="message-edit-dialog feature-dialog" role="dialog" aria-modal="true"><h3>转账 ¥{{ Number(messages[transferActionDialog]?.amount || 0).toFixed(2) }}</h3><p class="transfer-action-note">{{ messages[transferActionDialog]?.transferStatus || '请选择如何处理这笔转账' }}</p><footer><button type="button" @click="transferActionDialog = null">取消</button><button type="button" @click="respondToTransfer('return')">退还</button><button type="button" @click="respondToTransfer('accept')">收款</button></footer></section></div>
     <div v-if="messageDialog" class="acrylic-overlay" @click.self="messageDialog = null">
       <section class="message-edit-dialog" role="dialog" aria-modal="true" aria-label="编辑消息"><h3>编辑消息</h3><textarea v-model="messageDialog.text" rows="4" autofocus /><footer><button type="button" @click="messageDialog = null">取消</button><button type="button" @click="confirmEditMessage">保存</button></footer></section>
@@ -3393,8 +3937,18 @@ function dismissFriendRequest(request) {
 :deep(.voice-transcript){display:block;margin:0;padding:0;border:0;background:transparent;color:#8e8e93;font-size:11px;line-height:1.5}
 :deep(.voice-description){display:block;margin-top:2px;color:#aeaeb2;font-size:10px}
 
-/* 语音气泡：卡片与转写同属一个白色圆角气泡，转写在播放行下方延展 */
-:deep(.voice-bubble){width:min(220px,100%);box-sizing:border-box;display:flex;flex-direction:column;gap:4px;padding:10px 14px;border-radius:18px;background:#fff;color:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* 语音气泡：与文字气泡同样的配色与圆角。对方白底深字，我方蓝底白字；播放键与转写随之变色 */
+:deep(.voice-bubble){width:min(220px,100%);max-width:min(82%,360px);box-sizing:border-box;display:flex;flex-direction:column;gap:4px;padding:10px 13px;border-radius:8px;background:#fff;color:#17181a;box-shadow:none}
+:deep(.message-row.me .voice-bubble){background:#0099ff;color:#fff}
+:deep(.message-row.them .voice-bubble){background:#fff;color:#17181a}
+:deep(.voice-bubble .voice-message-card){background:transparent!important;box-shadow:none!important;padding:0;min-height:0;border-radius:0;color:inherit}
+:deep(.voice-bubble .voice-play-button){width:18px;height:18px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:0;background:transparent;color:inherit}
+:deep(.voice-bubble .voice-play-button svg){width:14px;height:14px}
+:deep(.message-row.me .voice-bubble .voice-play-button){color:#fff}
+:deep(.message-row.them .voice-bubble .voice-play-button){color:#0099ff}
+:deep(.message-row.me .voice-bubble .voice-wave){color:rgba(255,255,255,.55)}
+:deep(.message-row.me .voice-bubble .voice-transcript){color:rgba(255,255,255,.8)}
+:deep(.message-row.me .voice-bubble .voice-description){color:rgba(255,255,255,.7)}
 :deep(.voice-bubble .voice-message-card){width:100%;min-height:0;display:flex;align-items:center;gap:10px;padding:0;border:0;background:transparent;box-shadow:none}
 :deep(.voice-bubble .voice-transcript){display:block;margin:0;padding:0;border:0;background:transparent;color:#8e8e93;font-size:11px;line-height:1.5}
 :deep(.voice-bubble .voice-description){display:block;margin-top:2px;color:#aeaeb2;font-size:10px}
@@ -3626,6 +4180,11 @@ function dismissFriendRequest(request) {
 .bottom-nav button.selected{color:#607a70}
 .bottom-nav button svg{width:21px;height:21px;stroke-width:1.6}
 .bottom-nav button:focus-visible,.chat-list-back-button:focus-visible,.chat-list-search-action:focus-visible{outline:2px solid #9bb4a9;outline-offset:-3px;border-radius:8px}
+/* 聊天列表右上角的创建群聊按钮，位于搜索按钮左侧，外观与搜索按钮一致。 */
+.chat-list-add-action{position:absolute;top:calc(env(safe-area-inset-top) + 6px);right:70px;z-index:5;width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;color:#44464a;background:#ffffffa3;box-shadow:0 5px 18px #35445a12;backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);cursor:pointer}
+.chat-list-add-action svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.chat-list-add-action:active{transform:scale(.94)}
+.group-speaker-name{display:block;margin:0 0 3px 2px;color:#8a8f96;font-size:11px;line-height:1.3}
 
 
 @media(prefers-reduced-motion:reduce){.config-stamp-panel *{transition:none!important}}
@@ -4048,4 +4607,7 @@ function dismissFriendRequest(request) {
 .image-message-card img{display:block;width:100%;max-width:280px;height:auto;max-height:360px;object-fit:cover}
 
 
+/* 转发聊天记录：选择框与聊天内的转发卡片 */.forward-sheet{width:min(340px,100%);max-height:70vh;overflow:auto;box-sizing:border-box;padding:16px;border-radius:18px;background:#fff;color:#1c1c1e;box-shadow:0 18px 40px rgba(0,0,0,.18)}.forward-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.forward-head h2{flex:1;min-width:0;margin:0;text-align:center;font-size:16px;font-weight:600;white-space:nowrap}.forward-back,.forward-close{flex:none;width:28px;border:0;background:none;font-size:22px;color:#8e8e93;cursor:pointer;padding:0}.forward-hint{margin:6px 0 12px;font-size:12px;color:#8e8e93;line-height:1.6}.forward-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}.forward-list button{width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:12px;background:#f2f2f7;color:#1c1c1e;font:inherit;font-size:14px;text-align:left;cursor:pointer}.forward-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:14px;font-weight:600;flex:none}.forward-card{min-width:200px;max-width:240px;padding:12px 14px;border-radius:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:4px;color:#1c1c1e}.forward-card-head{display:flex;align-items:center;gap:6px;font-size:11px;color:#8e8e93}.forward-card-head svg{width:14px;height:14px}.forward-card strong{font-size:14px;font-weight:600}.forward-card small{font-size:12px;color:#8e8e93}
+.forward-pick{margin:0 0 12px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}.forward-pick label{display:grid;grid-template-columns:18px 42px 1fr;align-items:start;gap:8px;padding:8px 10px;border-radius:12px;background:#f2f2f7;font-size:13px;line-height:1.5;cursor:pointer}.forward-pick label.on{background:#e5f0ff}.forward-pick input{margin-top:3px}.forward-pick-who{font-size:12px;color:#8e8e93}.forward-pick-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.forward-actions{display:flex;justify-content:flex-end}.forward-next{min-height:36px;padding:0 16px;border:0;border-radius:12px;background:#0a84ff;color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}.forward-next:disabled{opacity:.4;cursor:default}
+.forward-more{width:100%;margin:0 0 8px;min-height:32px;border:0;border-radius:10px;background:#f2f2f7;color:#0a84ff;font:inherit;font-size:13px;cursor:pointer}
 </style>

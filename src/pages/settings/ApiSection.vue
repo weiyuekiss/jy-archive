@@ -1,6 +1,5 @@
 <script setup>
 import { computed, ref } from 'vue'
-import RetroSticker from '@/components/RetroSticker.vue'
 import {
   apiSettings,
   getCurrentPreset,
@@ -11,7 +10,7 @@ import {
   persistApiSettings
 } from '@/stores/settings'
 
-const emit = defineEmits(['toast'])
+const emit = defineEmits(['toast', 'back'])
 
 const currentPreset = computed(() => getCurrentPreset() || apiSettings.presets[0])
 const isFetchingModels = ref(false)
@@ -56,16 +55,21 @@ function handleDuplicatePreset() {
   if (p) emit('toast', `已复制为「${p.name}」`)
 }
 
+const pendingDelete = ref(null)
+
 function handleDeletePreset(id) {
   if (apiSettings.presets.length <= 1) {
     emit('toast', '至少保留一个预设')
     return
   }
   const target = apiSettings.presets.find((p) => p.id === id)
-  const name = target ? target.name : '该预设'
-  if (confirm(`确定删除「${name}」吗？`)) {
-    if (removePreset(id)) emit('toast', `已删除「${name}」`)
-  }
+  pendingDelete.value = { id, name: target ? target.name : '该预设' }
+}
+
+function confirmDeletePreset() {
+  const { id, name } = pendingDelete.value || {}
+  pendingDelete.value = null
+  if (id && removePreset(id)) emit('toast', `已删除「${name}」`)
 }
 
 async function handleFetchModels() {
@@ -106,111 +110,127 @@ function handleSaveCurrentModel() {
   persistApiSettings()
   emit('toast', `已保存配置 (${currentPreset.value?.model || '默认'})`)
 }
-
 </script>
 
 <template>
-  <div class="tab-page api-settings-page">
-    <!-- 预设栏：顶部一行，类似属性窗口的配置选择 -->
-    <div class="api-preset-bar">
-      <label class="preset-picker-label" for="api-preset-picker"><RetroSticker kind="folder" />预设</label>
-      <select id="api-preset-picker" class="preset-picker" :value="currentPreset.id" @change="selectPreset($event.target.value)">
-        <option v-for="p in apiSettings.presets" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
-      <div class="api-preset-bar-actions">
-        <button class="k-text-btn" type="button" @click="handleAddPreset">新增</button>
-        <button class="k-text-btn" type="button" @click="handleDuplicatePreset">复制</button>
-        <button v-if="apiSettings.presets.length > 1" class="k-text-btn" type="button" aria-label="删除当前预设" @click="handleDeletePreset(currentPreset.id)">删除</button>
+  <div class="ios-page">
+    <nav class="ios-nav">
+      <button type="button" class="ios-back" aria-label="返回设置" @click="emit('back')">‹</button>
+    </nav>
+    <h1 class="ios-page-title">API 配置</h1>
+
+    <!-- 预设：选择、新增、复制、删除 -->
+    <p class="ios-section-label">预设</p>
+    <div class="ios-group-wrap">
+      <div class="ios-group">
+        <label class="ios-field">
+          <span>当前预设</span>
+          <select class="ios-input ios-select-input" :value="currentPreset.id" aria-label="选择预设" @change="selectPreset($event.target.value)">
+            <option v-for="p in apiSettings.presets" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </label>
+      </div>
+      <div class="ios-btn-row">
+        <button type="button" class="ios-btn-pill" @click="handleAddPreset">新增</button>
+        <button type="button" class="ios-btn-pill" @click="handleDuplicatePreset">复制</button>
+        <button v-if="apiSettings.presets.length > 1" type="button" class="ios-btn-pill ios-btn-danger" aria-label="删除当前预设" @click="handleDeletePreset(currentPreset.id)">删除</button>
       </div>
     </div>
 
-    <!-- 标签页：连接 / 模型 -->
-    <div class="api-tabs" role="tablist">
-      <button type="button" role="tab" class="api-tab" :class="{ active: activeTab === 'connect' }" :aria-selected="activeTab === 'connect'" @click="activeTab = 'connect'"><RetroSticker kind="globe" />连接</button>
-      <button type="button" role="tab" class="api-tab" :class="{ active: activeTab === 'model' }" :aria-selected="activeTab === 'model'" @click="activeTab = 'model'"><RetroSticker kind="pointer" />模型</button>
+    <!-- 分段：连接 / 模型 -->
+    <div class="ios-segment" role="tablist">
+      <button type="button" role="tab" :class="{ on: activeTab === 'connect' }" :aria-selected="activeTab === 'connect'" @click="activeTab = 'connect'">连接</button>
+      <button type="button" role="tab" :class="{ on: activeTab === 'model' }" :aria-selected="activeTab === 'model'" @click="activeTab = 'model'">模型</button>
     </div>
 
-    <div class="api-tab-panel" role="tabpanel">
-      <!-- 连接标签：接口地址与密钥 -->
-      <template v-if="activeTab === 'connect'">
-        <div class="field-item">
-          <label class="field-label" for="api-base-url">接口地址</label>
-          <div class="input-wrap">
-            <input id="api-base-url" v-model="currentPreset.baseUrl" type="text" placeholder="https://api.openai.com/v1" class="k-input" />
-          </div>
-          <div class="quick-tags">
-            <span class="quick-hint">常用</span>
-            <button v-for="item in commonBaseUrls" :key="item.name" type="button" class="tag-pill" @click="applyBaseUrl(item.url)">
-              {{ item.name }}
-            </button>
-          </div>
+    <!-- 连接：接口地址与密钥 -->
+    <template v-if="activeTab === 'connect'">
+      <p class="ios-section-label">接口</p>
+      <div class="ios-group-wrap">
+        <div class="ios-group">
+          <label class="ios-field">
+            <span>接口地址</span>
+            <input v-model="currentPreset.baseUrl" class="ios-input ios-mono" type="text" placeholder="https://api.openai.com/v1" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          </label>
+          <label class="ios-field">
+            <span>密钥</span>
+            <input v-model="currentPreset.apiKey" class="ios-input ios-mono" :type="showApiKey ? 'text' : 'password'" placeholder="sk-..." autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button type="button" class="ios-field-action" @click="showApiKey = !showApiKey">{{ showApiKey ? '隐藏' : '显示' }}</button>
+          </label>
         </div>
+      </div>
 
-        <div class="field-item">
-          <label class="field-label" for="api-key">密钥</label>
-          <div class="input-wrap has-suffix">
-            <input id="api-key" v-model="currentPreset.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="sk-..." class="k-input" />
-            <button type="button" class="suffix-toggle" @click="showApiKey = !showApiKey">
-              {{ showApiKey ? '隐藏' : '显示' }}
+      <p class="ios-section-label">常用地址</p>
+      <div class="ios-chips">
+        <button v-for="item in commonBaseUrls" :key="item.name" type="button" class="ios-chip" @click="applyBaseUrl(item.url)">{{ item.name }}</button>
+      </div>
+    </template>
+
+    <!-- 模型：当前模型、拉取列表、选择 -->
+    <template v-else>
+      <p class="ios-section-label">当前模型</p>
+      <div class="ios-group-wrap">
+        <div class="ios-group">
+          <label class="ios-field">
+            <span>模型</span>
+            <input v-model="currentPreset.model" class="ios-input ios-mono" type="text" placeholder="gpt-4o, deepseek-chat" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          </label>
+        </div>
+        <div class="ios-btn-row">
+          <button type="button" class="ios-btn-pill" @click="handleSaveCurrentModel">保存</button>
+          <button type="button" class="ios-btn-pill" :disabled="isFetchingModels" @click="handleFetchModels">{{ isFetchingModels ? '获取中…' : '获取模型列表' }}</button>
+        </div>
+      </div>
+
+      <template v-if="currentPreset.models?.length">
+        <p class="ios-section-label">服务器模型 · {{ currentPreset.models.length }} 个</p>
+        <div class="ios-group-wrap">
+          <div class="ios-group">
+            <div class="ios-search">
+              <input v-model="modelSearchQuery" class="ios-input" type="text" placeholder="搜索模型" />
+            </div>
+            <button v-for="m in filteredModels" :key="m" type="button" class="ios-model-row" @click="selectModel(m)">
+              <span>{{ m }}</span>
+              <span v-if="currentPreset.model === m" class="ios-check" aria-label="已选用">✓</span>
             </button>
+            <p v-if="filteredModels.length === 0" class="ios-empty">未匹配到模型</p>
           </div>
         </div>
       </template>
+      <p v-else class="ios-hint">点击「获取模型列表」后，可在这里选择模型。</p>
+    </template>
 
-      <!-- 模型标签：拉取列表、选择模型 -->
-      <template v-else>
-        <div class="field-item">
-          <label class="field-label" for="api-model">当前模型</label>
-          <div class="model-select-row">
-            <div class="input-wrap" style="flex: 1;">
-              <input id="api-model" v-model="currentPreset.model" type="text" placeholder="例如: gpt-4o, deepseek-chat" class="k-input bold" />
-            </div>
-            <button class="k-primary-btn compact" type="button" @click="handleSaveCurrentModel">保存</button>
+    <!-- 新建预设 -->
+    <transition name="ios-fade">
+      <div v-if="showPresetModal" class="ios-alert-backdrop" @click.self="showPresetModal = false">
+        <section class="ios-alert" role="dialog" aria-modal="true" aria-labelledby="preset-alert-title" @keyup.esc="showPresetModal = false">
+          <h2 id="preset-alert-title">新增 API 预设</h2>
+          <p>为这组服务取一个容易辨认的名字。</p>
+          <input v-model="newPresetName" class="ios-alert-input" type="text" maxlength="32" placeholder="例如：DeepSeek 日常" @keyup.enter="confirmAddPreset" />
+          <div class="ios-alert-btns">
+            <button type="button" @click="showPresetModal = false">取消</button>
+            <button type="button" class="strong" :disabled="!newPresetName.trim()" @click="confirmAddPreset">创建</button>
           </div>
-        </div>
+        </section>
+      </div>
+    </transition>
 
-        <div class="field-item">
-          <div class="model-fetch-row">
-            <button class="k-action-btn primary" type="button" :disabled="isFetchingModels" @click="handleFetchModels">
-              <span v-if="isFetchingModels" class="spinner" />
-              <span>{{ isFetchingModels ? '获取中…' : '获取模型列表' }}</span>
-            </button>
-            <span v-if="currentPreset.models?.length" class="count-pill">{{ currentPreset.models.length }} 个可用</span>
-            <button v-if="currentPreset.models?.length" class="model-list-toggle" type="button" @click="showModelList = !showModelList">
-              {{ showModelList ? '收起列表' : '展开列表' }}
-            </button>
+    <transition name="ios-fade">
+      <div v-if="pendingDelete" class="ios-alert-backdrop" @click.self="pendingDelete = null">
+        <section class="ios-alert" role="alertdialog" aria-modal="true" aria-labelledby="delete-preset-title">
+          <h2 id="delete-preset-title">删除预设？</h2>
+          <p>「{{ pendingDelete.name }}」将被移除，删除后无法恢复。</p>
+          <div class="ios-alert-btns">
+            <button type="button" @click="pendingDelete = null">取消</button>
+            <button type="button" class="danger" @click="confirmDeletePreset">删除</button>
           </div>
-        </div>
-
-        <div v-if="showModelList && currentPreset.models?.length" class="models-box">
-          <div class="box-head">
-            <div class="box-title">
-              <span>服务器模型列表</span>
-              <small>选择后自动保存</small>
-            </div>
-            <input v-model="modelSearchQuery" type="text" placeholder="搜索模型..." class="search-mini-input" />
-          </div>
-          <div class="model-chips-list">
-            <button v-for="m in filteredModels" :key="m" type="button" class="model-chip" :class="{ active: currentPreset.model === m }" @click="selectModel(m)">
-              <span class="model-chip-name">{{ m }}</span>
-              <span v-if="currentPreset.model === m" class="check-mark">✓</span>
-            </button>
-            <div v-if="filteredModels.length === 0" class="empty-model-tip">未匹配到模型</div>
-          </div>
-        </div>
-      </template>
-    </div>
+        </section>
+      </div>
+    </transition>
   </div>
-  <transition name="modal-fade">
-    <div v-if="showPresetModal" class="edit-modal-backdrop" @click.self="showPresetModal = false">
-      <section class="edit-modal api-preset-modal" role="dialog" aria-modal="true" aria-labelledby="preset-modal-title">
-        <button class="modal-close" type="button" aria-label="关闭" @click="showPresetModal = false">×</button>
-        <span class="modal-kicker">新建预设</span>
-        <h2 id="preset-modal-title">新增 API 预设</h2>
-        <p>为这组服务配置取一个容易辨认的名字。</p>
-        <input v-model="newPresetName" class="name-input" type="text" maxlength="32" placeholder="例如：DeepSeek 日常" @keyup.enter="confirmAddPreset" @keyup.esc="showPresetModal = false" />
-        <div class="modal-actions"><button class="cancel-btn" type="button" @click="showPresetModal = false">取消</button><button class="save-btn" type="button" :disabled="!newPresetName.trim()" @click="confirmAddPreset">创建预设</button></div>
-      </section>
-    </div>
-  </transition>
 </template>
+
+<style scoped>
+.ios-select-input{appearance:none;-webkit-appearance:none;text-align:right;color:#0a84ff;cursor:pointer}
+.ios-hint{margin:8px 18px 0;font-size:13px;line-height:1.5;color:#8e8e93}
+</style>

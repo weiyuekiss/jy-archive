@@ -1,9 +1,7 @@
 import { defineAsyncComponent } from 'vue'
-import BeautifyIcon from '@/components/icons/BeautifyIcon.vue'
-import SettingsIcon from '@/components/icons/SettingsIcon.vue'
-import ChatIcon from '@/components/icons/ChatIcon.vue'
-import CharacterIcon from '@/components/icons/CharacterIcon.vue'
+import { Palette, MessageCircle, UserRound, Settings as SettingsGlyph, Smartphone } from 'lucide-vue-next'
 
+const PhoneCheckApp = defineAsyncComponent(() => import('@/pages/PhoneCheckApp.vue'))
 const ChatApp = defineAsyncComponent(() => import('@/pages/ChatApp.vue'))
 const BeautifyApp = defineAsyncComponent(() => import('@/pages/BeautifyApp.vue'))
 const SettingsApp = defineAsyncComponent(() => import('@/pages/SettingsApp.vue'))
@@ -15,15 +13,15 @@ export const GRID_ROWS = 6
 
 // 底部 Dock 栏应用，按顺序占据 4 个位置
 export const dockApps = [
-  { id: 'beautify', name: '美化', icon: BeautifyIcon, page: BeautifyApp },
-  { id: 'chat', name: '聊天', icon: ChatIcon, page: ChatApp },
-  { id: 'character', name: '人物', icon: CharacterIcon, page: CharacterApp },
-  { id: 'settings', name: '设置', icon: SettingsIcon, page: SettingsApp }
+  { id: 'beautify', name: '美化', icon: Palette, page: BeautifyApp },
+  { id: 'chat', name: '聊天', icon: MessageCircle, page: ChatApp },
+  { id: 'character', name: '人物', icon: UserRound, page: CharacterApp },
+  { id: 'settings', name: '设置', icon: SettingsGlyph, page: SettingsApp }
 ]
 
 // 主屏应用（暂无）
 export const homeApps = [
-  { id: 'pending-1', name: '待做应用 1', pending: true },
+  { id: 'phone-check', name: '查手机', icon: Smartphone, page: PhoneCheckApp },
   { id: 'pending-2', name: '待做应用 2', pending: true },
   { id: 'pending-3', name: '待做应用 3', pending: true },
   { id: 'pending-4', name: '待做应用 4', pending: true }

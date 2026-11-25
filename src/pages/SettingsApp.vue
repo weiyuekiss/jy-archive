@@ -1,18 +1,21 @@
 <script setup>
-// 设置应用：Y2K 像素控制面板
+// 设置应用：iOS 26 风格的分组列表，无顶栏
 import { ref } from 'vue'
 import { exportAllData, replaceAllData } from '@/stores/db'
+import { userProfile } from '@/stores/settings'
+import { petSettings, persistPetSettings } from '@/stores/pet'
 import ApiSection from './settings/ApiSection.vue'
 import ProfileSection from './settings/ProfileSection.vue'
-import RetroComputer from '@/components/RetroComputer.vue'
-import RetroSticker from '@/components/RetroSticker.vue'
+import PetSection from './settings/PetSection.vue'
 
 const emit = defineEmits(['close'])
 
-const currentPage = ref('main') // 'main' | 'api' | 'profile'
+const currentPage = ref('main') // 'main' | 'api' | 'profile' | 'pet'
 const backupInput = ref(null)
 const isImporting = ref(false)
 const showStorageDialog = ref(false)
+const showImportConfirm = ref(false)
+const pendingImportFile = ref(null)
 
 async function exportData() {
   try {
@@ -36,11 +39,26 @@ function chooseBackup() {
   backupInput.value?.click()
 }
 
-async function importData(event) {
+// 选中备份文件后先弹出应用内确认框，不使用浏览器原生 confirm（无法设置样式）
+function importData(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file) return
-  if (!window.confirm('导入会覆盖当前应用数据，建议先导出备份。确定继续吗？')) return
+  pendingImportFile.value = file
+  showStorageDialog.value = false
+  showImportConfirm.value = true
+}
+
+function cancelImport() {
+  pendingImportFile.value = null
+  showImportConfirm.value = false
+}
+
+async function confirmImport() {
+  const file = pendingImportFile.value
+  showImportConfirm.value = false
+  pendingImportFile.value = null
+  if (!file) return
   isImporting.value = true
   try {
     const backup = JSON.parse(await file.text())
@@ -70,85 +88,115 @@ function showToast(msg) {
 function navigateTo(page) {
   currentPage.value = page
 }
-
-// 返回主页面
-function goBack() {
-  if (currentPage.value === 'main') emit('close')
-  else currentPage.value = 'main'
-}
 </script>
 
 <template>
   <div class="settings-app">
-    <main class="app-content">
-      <div class="retro-window" :class="{ 'settings-main-active': currentPage === 'main', 'settings-api-active': currentPage === 'api' }">
-        <div class="window-titlebar">
-          <div class="window-title"><RetroSticker kind="folder"/><span>JY 控制面板.exe</span></div>
-          <div class="window-controls"><i aria-hidden="true">_</i><i aria-hidden="true">□</i><button type="button" aria-label="关闭设置，返回桌面" @click="emit('close')">×</button></div>
-        </div>
-        <div class="window-menu"><span>文件(F)</span><span>编辑(E)</span><span>查看(V)</span><span>帮助(H)</span></div>
-        <div class="explorer-toolbar"><button type="button" @click="goBack"><svg class="retro-back-arrow" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 2h2v2H6zM4 4h2v2H4zM2 6h2v4H2zM4 10h2v2H4zM6 12h2v2H6zM4 7h10v2H4z"/></svg> 返回</button><span class="address-label">地址(D)</span><div class="explorer-address"><RetroSticker kind="folder"/><span>我的电脑 / 控制面板{{ currentPage === 'api' ? ' / API 配置' : currentPage === 'profile' ? ' / 人设配置' : '' }}</span></div></div>
-        <div class="window-body">
-      <div v-if="currentPage === 'main'" class="main-page">
-        <section class="settings-welcome">
-          <div class="welcome-copy"><span class="retro-eyebrow">PERSONAL COMPUTER / 2000</span><h2>欢迎来到<br>本喵的控制面板</h2><p>调试电波，整理人设，<br>把小小世界存进软盘里。</p><span class="system-label"><i/> SYSTEM READY !</span></div>
-          <RetroComputer class="welcome-computer"/>
-          <span class="welcome-serial">JY-OS © Y2K EDITION</span>
+    <button
+      v-if="currentPage === 'main'"
+      class="ios-close"
+      type="button"
+      aria-label="关闭设置，返回桌面"
+      @click="emit('close')"
+    >✕</button>
+
+    <main class="ios-screen">
+      <div v-if="currentPage === 'main'" class="ios-main">
+        <h1 class="ios-title">设置</h1>
+
+        <button class="ios-account" type="button" aria-label="打开账户与人设" @click="navigateTo('profile')">
+          <span class="ios-account-avatar" aria-hidden="true">
+            <img v-if="userProfile.avatar" :src="userProfile.avatar" alt=""/>
+            <span v-else>{{ (userProfile.name || '我').slice(0, 1) }}</span>
+          </span>
+          <span class="ios-account-text">
+            <strong>{{ userProfile.name || '未命名' }}</strong>
+            <small>{{ userProfile.bio || '账户、人设与头像' }}</small>
+          </span>
+          <span class="ios-chevron" aria-hidden="true">›</span>
+        </button>
+
+        <section class="ios-group" aria-label="桌宠">
+          <label class="ios-row ios-row-switch">
+            <span class="ios-icon ios-icon-blue" aria-hidden="true">猫</span>
+            <span class="ios-row-text">桌宠白猫</span>
+            <input
+              v-model="petSettings.enabled"
+              type="checkbox"
+              class="ios-switch"
+              aria-label="开启桌宠"
+              @change="persistPetSettings"
+            />
+          </label>
         </section>
-        <div class="settings-directory-heading"><span class="directory-caption"><RetroSticker kind="folder"/>选择一个设置项目</span><small>CONTROL PANEL</small><span class="directory-rule" aria-hidden="true"></span></div>
-        <section class="menu-section settings-icon-shortcuts" aria-label="设置项目">
-          <button class="menu-item" type="button" aria-label="进入 API 配置" @click="navigateTo('api')">
-            <RetroSticker kind="network"/><span class="menu-title">API 配置</span>
+
+        <section class="ios-group" aria-label="设置项目">
+          <button class="ios-row" type="button" aria-label="进入 API 配置" @click="navigateTo('api')">
+            <span class="ios-icon ios-icon-blue" aria-hidden="true">API</span>
+            <span class="ios-row-text">API 配置</span>
+            <span class="ios-chevron" aria-hidden="true">›</span>
           </button>
-          <button class="menu-item" type="button" aria-label="进入人设配置" @click="navigateTo('profile')">
-            <RetroSticker kind="profile"/><span class="menu-title">人设配置</span>
+          <button class="ios-row" type="button" aria-label="进入桌宠设置" @click="navigateTo('pet')">
+            <span class="ios-icon ios-icon-blue" aria-hidden="true">宠</span>
+            <span class="ios-row-text">桌宠</span>
+            <span class="ios-chevron" aria-hidden="true">›</span>
           </button>
-                <button class="menu-item storage-icon-button" type="button" aria-label="打开数据存储选项" @click="showStorageDialog = true">
-            <RetroSticker kind="disk"/><span class="menu-title">数据存储</span>
+          <button class="ios-row" type="button" aria-label="进入人设配置" @click="navigateTo('profile')">
+            <span class="ios-icon ios-icon-purple" aria-hidden="true">人</span>
+            <span class="ios-row-text">人设配置</span>
+            <span class="ios-chevron" aria-hidden="true">›</span>
+          </button>
+          <button class="ios-row" type="button" aria-label="打开数据存储选项" @click="showStorageDialog = true">
+            <span class="ios-icon ios-icon-green" aria-hidden="true">⇅</span>
+            <span class="ios-row-text">数据存储</span>
+            <span class="ios-chevron" aria-hidden="true">›</span>
           </button>
         </section>
+
         <input ref="backupInput" class="backup-file-input" type="file" accept="application/json,.json" @change="importData">
       </div>
-      <div v-else-if="currentPage === 'api'" class="settings-subpage">
-        <header class="settings-page-header"><button type="button" aria-label="返回设置" @click="currentPage = 'main'"><svg class="retro-back-arrow" viewBox="0 0 16 16" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 2h2v2H6zM4 4h2v2H4zM2 6h2v4H2zM4 10h2v2H4zM6 12h2v2H6zM4 7h10v2H4z"/></svg></button><h1>API 配置</h1><span></span></header>
-        <ApiSection @toast="showToast" />
-      </div>
+
+      <ApiSection v-else-if="currentPage === 'api'" @toast="showToast" @back="currentPage = 'main'" />
+
       <ProfileSection v-else-if="currentPage === 'profile'" @toast="showToast" @back="currentPage = 'main'" />
-        </div>
-        <transition name="modal-fade">
-          <div v-if="showStorageDialog" class="storage-dialog-backdrop" @click.self="showStorageDialog = false">
-            <section class="storage-dialog" role="dialog" aria-modal="true" aria-labelledby="storage-dialog-title">
-              <header class="storage-dialog-titlebar">
-                <h2 id="storage-dialog-title">数据存储</h2>
-                <button class="storage-dialog-close" type="button" aria-label="关闭并返回设置" @click="showStorageDialog = false">×</button>
-              </header>
-              <div class="storage-dialog-content">
-                <div class="storage-dialog-message">
-                  <RetroSticker kind="disk" />
-                  <p>选择要执行的操作。导入数据会覆盖当前应用数据，建议先导出备份。</p>
-                </div>
-                <div class="storage-dialog-actions">
-                  <button type="button" @click="exportData">导出数据</button>
-                  <button type="button" class="primary" :disabled="isImporting" @click="chooseBackup">{{ isImporting ? '导入中…' : '导入数据' }}</button>
-                  <button type="button" @click="showStorageDialog = false">返回</button>
-                </div>
-              </div>
-            </section>
-          </div>
-        </transition>
-        <div class="window-status"><span>▣ 就绪 · 你的世界已准备好</span><span>JY-OS / Y2K EDITION</span></div>
-      </div>
+      <PetSection v-else-if="currentPage === 'pet'" @toast="showToast" @back="currentPage = 'main'" />
     </main>
 
-    <transition name="toast-fade">
-      <div v-if="toast" class="toast" role="status">
-        <span class="toast-dot" />
+    <transition name="ios-fade">
+      <div v-if="showStorageDialog" class="ios-sheet-backdrop" @click.self="showStorageDialog = false">
+        <section class="ios-sheet" role="dialog" aria-modal="true" aria-labelledby="storage-sheet-title">
+          <div class="ios-sheet-grabber" aria-hidden="true"></div>
+          <h2 id="storage-sheet-title" class="ios-sheet-title">数据存储</h2>
+          <p class="ios-sheet-text">导入数据会覆盖当前应用数据，建议先导出备份。</p>
+          <div class="ios-sheet-actions">
+            <button type="button" class="ios-sheet-btn" @click="exportData">导出数据</button>
+            <button type="button" class="ios-sheet-btn ios-sheet-btn-primary" :disabled="isImporting" @click="chooseBackup">{{ isImporting ? '导入中…' : '导入数据' }}</button>
+            <button type="button" class="ios-sheet-btn ios-sheet-btn-cancel" @click="showStorageDialog = false">取消</button>
+          </div>
+        </section>
+      </div>
+    </transition>
+
+    <transition name="ios-fade">
+      <div v-if="showImportConfirm" class="ios-alert-backdrop" @click.self="cancelImport">
+        <section class="ios-alert" role="alertdialog" aria-modal="true" aria-labelledby="import-alert-title">
+          <h2 id="import-alert-title">导入数据？</h2>
+          <p>导入会覆盖当前应用的全部数据，建议先导出备份。</p>
+          <div class="ios-alert-btns">
+            <button type="button" @click="cancelImport">取消</button>
+            <button type="button" class="danger" @click="confirmImport">导入</button>
+          </div>
+        </section>
+      </div>
+    </transition>
+
+    <transition name="ios-fade">
+      <div v-if="toast" class="ios-toast" role="status">
+        <span class="ios-toast-dot" />
         <span>{{ toast }}</span>
       </div>
     </transition>
   </div>
 </template>
 
-<style src="@/styles/settings.css"></style>
-<style scoped src="@/styles/settings-y2k.css"></style>
-
+<style src="@/styles/ios-settings.css"></style>

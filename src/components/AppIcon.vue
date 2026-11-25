@@ -32,8 +32,8 @@ const customIcon = computed(() => {
         :alt="app.name"
         class="custom-icon-img"
       />
+      <component :is="app.icon" v-if="app.icon" class="app-glyph" />
       <SolidAppIcon v-else-if="frosted" :name="app.id" class="frosted-symbol" />
-      <component :is="app.icon" v-else />
     </div>
     <span class="app-name" :class="{ 'glass-text': isGlass }">{{ app.name }}</span>
   </button>

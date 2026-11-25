@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 const props = defineProps({ characters: { type: Array, default: () => [] }, selectedCharacterId: { type: String, default: '' }, memories: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['select-character', 'update:memories', 'close'])
-const categories = ['全部', '用户习惯', '重要记忆', '对话碎片', '朋友圈记忆']
+const categories = ['全部', '用户习惯', '重要记忆', '对话碎片', '朋友圈记忆', '手机记录']
 const category = ref('全部')
 const editTarget = ref(null)
 const editingOpen = ref(false)

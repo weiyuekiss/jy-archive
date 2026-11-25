@@ -1,0 +1,135 @@
+/* 设置应用：iOS 26 风格。所有类名带 ios- 前缀，只在设置应用内使用。 */
+.settings-app{position:fixed;inset:0;z-index:20;overflow:hidden;background:#f2f2f7;color:#000;font-family:-apple-system,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.settings-app button,.settings-app input,.settings-app textarea,.settings-app select{font:inherit;color:inherit}
+.ios-screen{position:absolute;inset:0;overflow-y:auto;box-sizing:border-box;padding:0 16px calc(env(safe-area-inset-bottom) + 40px);-webkit-overflow-scrolling:touch}
+.backup-file-input{display:none}
+
+/* 主页 */
+.ios-main{padding-top:calc(env(safe-area-inset-top) + 56px)}
+.ios-title{margin:0 4px 14px;font-size:34px;font-weight:700;letter-spacing:.2px;line-height:1.15}
+.ios-close{position:fixed;z-index:3;top:calc(env(safe-area-inset-top) + 12px);right:16px;width:32px;height:32px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;background:rgba(120,120,128,.16);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);font-size:13px;font-weight:600;color:#3c3c43;cursor:pointer}
+.ios-close:active{transform:scale(.94)}
+.ios-account{display:flex;align-items:center;gap:14px;width:100%;margin:0 0 22px;padding:14px;box-sizing:border-box;border:0;border-radius:20px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04);text-align:left;cursor:pointer;transition:transform .15s,background .15s}
+.ios-account:active{background:#f7f7f8;transform:scale(.99)}
+.ios-account-avatar{flex:none;display:grid;place-items:center;width:60px;height:60px;overflow:hidden;border-radius:50%;background:linear-gradient(180deg,#e7e7ec,#d6d6dc);color:#fff;font-size:24px;font-weight:600}
+.ios-account-avatar img{width:100%;height:100%;object-fit:cover}
+.ios-account-text{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.ios-account-text strong{font-size:20px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ios-account-text small{font-size:13px;color:#8e8e93;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ios-group{overflow:hidden;margin-bottom:22px;border-radius:14px;background:#fff;box-shadow:0 .5px 0 rgba(0,0,0,.04)}
+.ios-row{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;margin:0;padding:10px 14px;border:0;background:#fff;text-align:left;font-size:17px;color:#000;cursor:pointer;transition:background .15s}
+.ios-row+.ios-row{border-top:.5px solid #e2e2e7}
+.ios-row:active{background:#e5e5ea}
+.ios-icon{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:8px;color:#fff;font-size:13px;font-weight:700;letter-spacing:.02em}
+.ios-icon-blue,.ios-icon-purple,.ios-icon-green{background:linear-gradient(180deg,#f7f7f9,#e9e9ee);color:#3c3c43;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.08)}
+.ios-row-text{flex:1;min-width:0}
+.ios-chevron{font-size:22px;font-weight:500;color:#c4c4c9}
+
+/* 子页面 */
+.ios-subpage{padding-top:calc(env(safe-area-inset-top) + 8px)}
+.ios-nav{position:sticky;top:0;z-index:5;display:flex;align-items:flex-end;box-sizing:border-box;margin:0 -16px;padding:max(env(safe-area-inset-top),52px) 12px 6px;background:rgba(242,242,247,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.ios-back{width:36px;height:36px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:24px;line-height:1;color:#0a84ff;cursor:pointer}
+.ios-back:active{transform:scale(.94)}
+.ios-page-title{margin:10px 4px 16px;font-size:34px;font-weight:700;letter-spacing:.2px;line-height:1.15}
+.ios-section-label{margin:18px 18px 8px;font-size:13px;color:#8e8e93}
+.ios-note{margin:8px 18px 0;font-size:13px;line-height:1.5;color:#8e8e93}
+.ios-group-wrap{margin-bottom:22px}
+
+/* 表单行 */
+.ios-field{display:flex;align-items:center;gap:12px;min-height:48px;padding:8px 14px;background:#fff;box-sizing:border-box}
+.ios-field+.ios-field{border-top:.5px solid #e2e2e7}
+.ios-field>span:first-child{flex:none;width:72px;font-size:16px}
+.ios-input{flex:1;min-width:0;padding:6px 0;border:0;outline:0;background:transparent;font-size:16px;color:#000;text-align:left}
+.ios-input::placeholder,.ios-textarea::placeholder{color:#c7c7cc}
+.ios-mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+.ios-field-action{flex:none;padding:4px 2px;border:0;background:none;font-size:15px;color:#0a84ff;cursor:pointer}
+.ios-field-long{flex-direction:column;align-items:stretch;gap:6px}
+.ios-textarea{width:100%;min-height:140px;padding:6px 0;border:0;outline:0;background:transparent;font-size:16px;line-height:1.6;resize:vertical;box-sizing:border-box}
+.ios-hint{margin:6px 18px 0;font-size:12px;line-height:1.5;color:#8e8e93}
+
+/* 按钮 */
+.ios-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:50px;margin:0;border:0;border-radius:14px;background:#fff;font-size:17px;color:#0a84ff;cursor:pointer;box-sizing:border-box}
+.ios-btn:active{background:#e5e5ea}
+.ios-btn:disabled{opacity:.45;cursor:not-allowed}
+.ios-btn-primary{background:#0a84ff;color:#fff;font-weight:600}
+.ios-btn-primary:active{background:#0a6fd8}
+.ios-btn-danger{color:#ff3b30}
+.ios-btn-row{display:flex;gap:10px;margin:14px 16px 0}
+.ios-btn-row .ios-btn{flex:1}
+.ios-btn-pill{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 14px;border:0;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05);font-size:14px;font-weight:500;color:#0a84ff;cursor:pointer}
+.ios-btn-pill:disabled{opacity:.4}
+.ios-btn-pill.ios-btn-danger{color:#ff3b30}
+
+/* 模型列表与标签 */
+.ios-chips{display:flex;gap:8px;overflow-x:auto;padding:0 16px 4px;scrollbar-width:none}
+.ios-chips::-webkit-scrollbar{display:none}
+.ios-chip{flex:none;padding:7px 13px;border:0;border-radius:999px;background:#fff;font-size:14px;color:#0a84ff;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.ios-model-row{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:46px;padding:10px 14px;box-sizing:border-box;border:0;background:#fff;text-align:left;font-size:16px;cursor:pointer;word-break:break-all}
+.ios-model-row+.ios-model-row{border-top:.5px solid #e2e2e7}
+.ios-model-row:active{background:#e5e5ea}
+.ios-check{flex:none;color:#0a84ff;font-weight:700}
+.ios-empty{margin:0;padding:14px;text-align:center;font-size:14px;color:#8e8e93;background:#fff}
+.ios-search{padding:8px 14px;background:#fff}
+.ios-search .ios-input{padding:6px 10px;border-radius:10px;background:#f2f2f7;font-size:15px}
+
+/* 分段控件 */
+.ios-segment{display:flex;padding:3px;margin:4px 0 16px;border-radius:10px;background:rgba(118,118,128,.12)}
+.ios-segment button{flex:1;height:32px;border:0;border-radius:8px;background:transparent;font-size:14px;font-weight:600;color:#3c3c43;cursor:pointer}
+.ios-segment button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+
+/* 人设页 */
+.ios-switcher{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 6px}
+.ios-step{width:34px;height:34px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:22px;line-height:1;color:#0a84ff;cursor:pointer}
+.ios-step:disabled{opacity:.35;cursor:default}
+.ios-counter{font-size:14px;font-weight:600;color:#3c3c43;font-variant-numeric:tabular-nums}
+.ios-dots{display:flex;justify-content:center;gap:6px;margin-bottom:14px}
+.ios-dots button{width:6px;height:6px;padding:0;border:0;border-radius:3px;background:#c7c7cc;cursor:pointer;transition:width .2s}
+.ios-dots button.on{width:16px;background:#1d1d1f}
+.ios-hero{display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 18px 20px;border-radius:22px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04);text-align:center;transition:opacity .2s,transform .2s}
+.ios-hero.flipping{opacity:.4;transform:scale(.98)}
+.ios-avatar-lg{width:96px;height:96px;margin-bottom:4px;padding:0;overflow:hidden;border:0;border-radius:50%;background:linear-gradient(180deg,#e7e7ec,#d6d6dc);display:grid;place-items:center;font-size:36px;font-weight:600;color:#fff;cursor:pointer}
+.ios-avatar-lg img{width:100%;height:100%;object-fit:cover}
+.ios-hero-name{font-size:22px;font-weight:600}
+.ios-hero-meta{font-size:13px;color:#8e8e93}
+.ios-pill{display:inline-block;padding:3px 10px;border-radius:999px;background:#e8f1fd;color:#0a84ff;font-size:12px;font-weight:600}
+.ios-hero-bio{margin:6px 0 0;font-size:14px;line-height:1.5;color:#3c3c43;white-space:pre-wrap}
+.ios-chips-wrap{margin-top:8px}
+
+/* 弹窗与底部面板 */
+.ios-alert-backdrop{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.28)}
+.ios-alert{width:min(100%,290px);overflow:hidden;padding:20px 16px 0;border-radius:18px;background:rgba(250,250,252,.97);box-shadow:0 14px 40px rgba(0,0,0,.18);text-align:center;box-sizing:border-box}
+.ios-alert h2{margin:0 0 6px;font-size:17px;font-weight:600}
+.ios-alert p{margin:0 0 14px;font-size:13px;line-height:1.45;color:#3c3c43}
+.ios-alert-input{width:100%;height:36px;margin:0 0 14px;padding:0 10px;box-sizing:border-box;border:.5px solid #d1d1d6;border-radius:8px;background:#fff;color:#000;font-size:16px;outline:0}
+.ios-alert-input:focus{border-color:#0a84ff}
+.ios-alert-input::placeholder{color:#c7c7cc}
+.ios-alert-btns{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;margin:0 -16px;border-top:.5px solid #d1d1d6}
+.ios-alert-btns button{height:44px;border:0;border-left:.5px solid #d1d1d6;background:transparent;font-size:17px;color:#0a84ff;cursor:pointer}
+.ios-alert-btns button:first-child{border-left:0}
+.ios-alert-btns button.strong{font-weight:600}
+.ios-alert-btns button.danger{color:#ff3b30;font-weight:600}
+.ios-sheet-backdrop{position:fixed;inset:0;z-index:40;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.28)}
+.ios-sheet{width:100%;max-width:520px;box-sizing:border-box;padding:10px 16px calc(env(safe-area-inset-bottom) + 16px);border-radius:20px 20px 0 0;background:rgba(250,250,252,.98);box-shadow:0 -8px 30px rgba(0,0,0,.12)}
+.ios-sheet-grabber{width:36px;height:5px;margin:0 auto 14px;border-radius:3px;background:#c7c7cc}
+.ios-sheet-title{margin:0 0 6px;text-align:center;font-size:18px;font-weight:600}
+.ios-sheet-text{margin:0 0 18px;text-align:center;font-size:13px;line-height:1.5;color:#8e8e93}
+.ios-sheet-actions{display:flex;flex-direction:column;gap:10px}
+.ios-sheet-btn{width:100%;height:50px;border:0;border-radius:14px;background:#fff;font-size:17px;color:#0a84ff;cursor:pointer}
+.ios-sheet-btn:active{background:#e5e5ea}
+.ios-sheet-btn:disabled{opacity:.5}
+.ios-sheet-btn-primary{background:#0a84ff;color:#fff;font-weight:600}
+.ios-sheet-btn-primary:active{background:#0a6fd8}
+.ios-sheet-btn-cancel{margin-top:4px;color:#ff3b30;font-weight:600}
+
+/* 提示与过渡 */
+.ios-toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 28px);transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:8px;max-width:calc(100% - 40px);padding:10px 16px;box-sizing:border-box;border-radius:999px;background:rgba(28,28,30,.88);color:#fff;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.ios-toast-dot{width:6px;height:6px;flex:none;border-radius:50%;background:#34c759}
+.ios-fade-enter-active,.ios-fade-leave-active{transition:opacity .2s}
+.ios-fade-enter-from,.ios-fade-leave-to{opacity:0}
+@media(prefers-reduced-motion:reduce){.ios-fade-enter-active,.ios-fade-leave-active,.ios-hero,.ios-account{transition:none!important}}
+.ios-row-switch{cursor:default}
+.ios-switch{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:51px;height:31px;margin:0;border-radius:16px;background:#e9e9eb;transition:background .2s;cursor:pointer}
+.ios-switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.2);transition:transform .2s}
+.ios-switch:checked{background:#34c759}
+.ios-switch:checked::after{transform:translateX(20px)}
+.ios-switch:focus-visible{outline:2px solid #8d9eaf;outline-offset:3px}
