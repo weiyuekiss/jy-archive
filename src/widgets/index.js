@@ -18,6 +18,7 @@ export const widgetCatalog = [
   { id: 'ins-qr-pay', name: 'INS 扫码付款', w: 2, h: 2 },
   { id: 'ins-avatar-circle', name: 'INS 圆形头像', w: 2, h: 2 },
   { id: 'ins-inbox-tip', name: 'INS 信息接收', w: 2, h: 2 },
+  { id: 'clock-date', name: '日期时钟', w: 4, h: 2 },
   { id: 'ins-daily-copy', name: 'INS 每日文案', w: 4, h: 2 },
   { id: 'ins-film-clock', name: 'INS 氛围时间', w: 4, h: 2 },
   { id: 'ins-bw-date', name: 'INS 黑白日期', w: 4, h: 2 },

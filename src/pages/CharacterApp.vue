@@ -503,7 +503,7 @@ function stickerTilt(character) {
 function stickerStyle(character, index) {
   const spot = wallSpot(character, index)
   const active = dragging.value?.id === character.id
-  return { left: `${spot.x}%`, top: `${spot.y}%`, transform: `rotate(${stickerTilt(character)}deg)`, zIndex: active ? 10 : 1 }
+  return { left: `${spot.x}%`, top: `${spot.y}%`, rotate: `${stickerTilt(character)}deg`, zIndex: active ? 10 : 1 }
 }
 // 地图尺寸与缩放：WALL_BASE 为缩放 1 时地图相对墙面的倍数（比墙面大，因此可以平移），wallZoom 在此基础上再缩放
 const WALL_BASE = 2.2
@@ -610,7 +610,7 @@ function onBoardPointerMove(event) {
     wallPan.value = clampPan(pan, zoom)
     return
   }
-  if (wallPanStart && wallPointers.size === 1) {
+  if (wallPanStart && wallPointers.size === 1 && !pressStart) {
     wallPan.value = clampPan({ x: wallPanStart.pan.x + (event.clientX - wallPanStart.x), y: wallPanStart.pan.y + (event.clientY - wallPanStart.y) }, wallZoom.value)
     return
   }
@@ -655,6 +655,7 @@ function startDrag(event, character, index) {
   pressTimer = setTimeout(() => {
     dragging.value = { id: character.id, startX: pressStart.x, startY: pressStart.y, origX: spot.x, origY: spot.y, rect: board.getBoundingClientRect(), zoom: wallZoom.value, moved: false }
     pressStart = null
+    wallPanStart = null
     if (navigator.vibrate) navigator.vibrate(10)
   }, LONG_PRESS_MS)
 }
@@ -804,12 +805,12 @@ function selectDraftAvatar(event) {
           :class="{ dragging: dragging?.id === character.id }"
           :style="stickerStyle(character, index)"
           :aria-label="`${character.name}，拖动可调整位置，点击打开档案`"
-          @pointerdown.prevent="startDrag($event, character, index)"
+          @pointerdown.prevent="startDrag($event, character, index)" @contextmenu.prevent @dragstart.prevent
         >
           <span class="wall-no" aria-hidden="true">No.{{ String(index + 1).padStart(2, '0') }}</span>
           <span class="wall-tape" :class="{ 'wall-tape-b': index % 2 === 1 }" aria-hidden="true"></span>
           <span class="wall-photo">
-            <img v-if="character.avatar" :src="character.avatar" :alt="character.name"/>
+            <img v-if="character.avatar" :src="character.avatar" :alt="character.name" draggable="false" @contextmenu.prevent />
             <span v-else class="wall-initial">{{ (character.name || '？').slice(0, 1) }}</span>
           </span>
           <span class="wall-name">{{ character.name }}</span>
@@ -1293,6 +1294,7 @@ button,input{font:inherit}.masthead{height:57px;flex:none;display:grid;grid-temp
 .wall-tilt-value{flex:none;min-width:38px;text-align:right;font-size:12px;font-weight:600;color:#1c1c1e;font-variant-numeric:tabular-nums}
 .wall-tilt-done{flex:none;height:30px;padding:0 12px;border:0;border-radius:999px;background:#1c1c1e;color:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
 /* 点按贴纸时不要浏览器默认的蓝色高亮 */
+.character-app .wall-sticker:active{transform:none!important;filter:none!important;box-shadow:0 2px 6px rgba(0,0,0,.05),0 8px 16px rgba(0,0,0,.06)!important}
 .wall-sticker,.wall-note,.wall-photo{-webkit-tap-highlight-color:transparent;outline:none}
 .wall-top-btn.on{background:#1c1c1e;color:#fff}
 /* 贴纸上的触摸手势交给地图画布：划动即平移地图，长按才拖动贴纸，点按打开档案 */
@@ -1304,7 +1306,6 @@ button,input{font:inherit}.masthead{height:57px;flex:none;display:grid;grid-temp
 .wall-sticker{padding:10px 10px 12px;border-radius:6px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.05)}
 .wall-sticker:hover{box-shadow:0 2px 4px rgba(0,0,0,.08),0 8px 18px rgba(0,0,0,.08)}
 .wall-sticker.dragging{box-shadow:0 4px 8px rgba(0,0,0,.10),0 12px 24px rgba(0,0,0,.12)}
-.wall-sticker::after{content:"";display:block;height:14px;margin-top:9px;background:repeating-linear-gradient(90deg,#1c1c1e 0 1.5px,transparent 1.5px 3px,#1c1c1e 3px 4px,transparent 4px 6px,#1c1c1e 6px 8px,transparent 8px 9px)}
 .wall-no{color:#8e8e93;font-size:9px}
 /* 贴纸相片：宽高 2:1，白色纸边，轻微纸张质感，与档案卡一致的小圆角 */
 .wall-photo{width:100%;aspect-ratio:2/1;border-radius:3px;background:#f3f1ec;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05),inset 0 0 0 6px #fff,0 1px 2px rgba(0,0,0,.08)}

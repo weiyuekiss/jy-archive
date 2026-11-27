@@ -1,6 +1,7 @@
 // 群聊回复的请求：一次调用让模型扮演群里的成员，按群的回复方式决定谁发言。
 // 群成员都在同一个群里，所以每位成员的完整设定都放进这一次请求，模型分别扮演各人。
 import { assemblePresetMessages } from '@/stores/chatPresets'
+import { splitSentenceReplies } from '@/components/pet/splitReplySentences'
 
 export function groupMemberToText(member) {
   return Object.entries({ 姓名: member.name, 性别: member.gender, 生日: member.birthday, 年龄: member.age, 职业: member.occupation, 人物设定: member.details })
@@ -112,7 +113,7 @@ export function parseGroupReplies(raw, members) {
     throw new Error('群聊回复格式解析失败，请重试。')
   }
   const items = Array.isArray(value?.messages) ? value.messages : []
-  const replies = items.map((item) => parseItem(item, members)).filter(Boolean)
+  const replies = splitSentenceReplies(items.map((item) => parseItem(item, members)).filter(Boolean))
   const transferAction = value?.transferAction === 'accept' || value?.transferAction === 'return' ? value.transferAction : null
   if (!replies.length && !transferAction) throw new Error('群里暂时没有成员回复，请重试。')
   return { replies, transferAction }

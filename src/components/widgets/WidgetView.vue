@@ -115,6 +115,12 @@ const coupleDays = computed(() => {
       </div>
     </div>
 
+    <!-- 4×2 日期加粗体时钟：上方日期，下方大号时间，类似 iOS 锁屏 -->
+    <div v-else-if="type === 'clock-date'" class="clock-date">
+      <span class="clock-date-line">{{ monthEn }} {{ day }} · {{ weekEn }}</span>
+      <span class="clock-date-time">{{ hh }}:{{ mm }}</span>
+    </div>
+
     <!-- 4×2 粗体数字时钟，无卡片底色 -->
     <div v-else-if="type === 'clock-bold'" class="clock-bold">
       <span>{{ hh }}</span><i>:</i><span>{{ mm }}</span>
@@ -799,6 +805,11 @@ const coupleDays = computed(() => {
 /* 4×2 粗体数字时钟（无卡片式） */
 .clock-bold{display:flex;align-items:center;justify-content:center;gap:1.4%;font-size:62cqh;font-weight:500;letter-spacing:-.085em;color:#3f4145;font-variant-numeric:tabular-nums;line-height:1}
 .clock-bold i{font-style:normal;color:#3f4145;transform:translateY(-3%)}
+
+/* 4×2 日期加粗体时钟：日期在上，时间用粗体大字号 */
+.clock-date{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2%;width:100%;height:100%;color:#3f4145;font-variant-numeric:tabular-nums}
+.clock-date-line{font-size:9cqh;font-weight:600;letter-spacing:.12em;color:#8a8d93}
+.clock-date-time{font-size:52cqh;font-weight:700;letter-spacing:-.04em;line-height:1}
 
 /* 4×2 时间横幅 */
 .time-wide {

@@ -10,7 +10,7 @@ import ChatMyPage from '@/components/ChatMyPage.vue'
 import MemoryConfigPage from '@/components/MemoryConfigPage.vue'
 import { reportChatError } from '@/stores/chatErrors'
 import tritoneSoundUrl from '@/assets/sounds/qq-tritone.mp3?url'
-import { roleplayRevision, managedRoleplayIds, migratePhoneChatScene, chatStyleBoost } from '@/stores/chatRoleplay'
+import { roleplayRevision, managedRoleplayIds, migratePhoneChatScene } from '@/stores/chatRoleplay'
 import { currentChatId } from '@/stores/pet'
 import { replyNotices as sharedReplyNotices, pushReplyNotice, clearReplyNotices as clearSharedReplyNotices, pendingNoticeChat, openNoticeFromAnywhere } from '@/stores/replyNotice'
 import { getPhone } from '@/stores/phone'
@@ -18,6 +18,7 @@ import { worldData, loadWorlds, knownBy, worldOf } from '@/stores/worlds'
 import { loreBlock, lorebook, loadLorebook } from '@/stores/lorebook'
 import { groupChats, groupChatItem, groupOf, loadGroupChats, createGroupChat, isGroupId, visibleGroups, updateGroup, deleteGroup, leaveGroup, pruneGroupMembers } from '@/stores/groupChats'
 import { requestGroupCompletion, parseGroupReplies, limitSpeakers } from '@/components/pet/generateGroupReply'
+import { splitSentenceReplies } from '@/components/pet/splitReplySentences'
 import GroupCreatePage from '@/components/GroupCreatePage.vue'
 import GroupSettingsPage from '@/components/GroupSettingsPage.vue'
 import { MEMORY_BUDGET, memoryLinesOf, transcriptLines } from '@/components/pet/chatMemoryText'
@@ -147,7 +148,7 @@ const defaultChatPreset = {
   top_k: 0,
   top_p: 0,
   entries: [
-    {"id":"system","name":"主提示词","enabled":true,"content":"你正在扮演{{char}}，与{{user}}进行线上即时聊天。以完整角色设定、双方已建立的关系和已有对话为依据回应，不替用户发言或决定其行动。双方当前不在同一地点，不声称能够看见或触碰对方；回忆、计划与设想须与当前事实区分。\n\n回复时严格遵循以下规则：\n - 回复应当使用日常、简洁、富有感情的语气和口吻\n - 回复不包含质问\n - 不把态度差当成挑逗，不故作暧昧\n - 不戏剧化，但是应当有人类的幽默和趣味\n - 用词简洁，不复杂\n - 回复时长时短，心情冷暖变化\n - 不总是抛出反问\n - 表达关心不用问问题\n - 信息留白，制造反差萌\n - 话里藏意，值得品味\n - 主动分享，超级主动\n - 细察{{user}}心情，主动了解\n - 风趣细心，体察入微\n - 个性真实，引导话题\n - 女性喜爱形象与二次元化萌点\n - 让人欲罢不能的回复风格\n - 激发对话荷尔蒙与兴致\n - 不加语气助词，但使用语气词\n - 回复不加副词\n - 回复不油腻，不普信。"},
+    {"id":"system","name":"主提示词","enabled":true,"content":"你正在扮演{{char}}，与{{user}}进行线上即时聊天。以完整角色设定、双方已建立的关系和已有对话为依据回应，不替用户发言或决定其行动。双方当前不在同一地点，不声称能够看见或触碰对方；回忆、计划与设想须与当前事实区分。"},
     {"id":"reply-format-contract","name":"回复格式要求与稳定规则","enabled":true,"content":"【回复格式要求】每次普通聊天回复必须只输出一个合法 JSON 对象，不要输出 Markdown 代码围栏、前言、解释或 JSON 之外的任何字符。对象必须包含非空 messages 数组；每个数组元素必须是对象，且必须包含非空字符串字段 text。示例：{\"messages\":[{\"text\":\"符合角色语气的回复\"}]}。每条都必须有 text。若当前聊天启用了自动翻译角色消息，且本条 text 含非中文内容，再附加 translation 字段，值为自然、准确、保留角色语气的普通话简体中文译文；中文或无需翻译时可以省略 translation。translation 只放译文，不重复原文。若启用状态栏，则最后一条消息必须附加 status 对象，且只在最后一条附加，其字段按状态栏要求填写，不得省略；不要把状态、分析或格式说明写进 text。\n\n【可用消息类型】除普通文字外，你还可以在消息对象里加 type 字段发送特殊内容：\n- 文字图：{\"type\":\"text-image\",\"content\":\"画面描述或文字内容\",\"text\":\"文字图的简短说明\"}，适合描述一张画面、一张纸条或一段场景。\n- 文件：{\"type\":\"file\",\"fileName\":\"文件名.txt\",\"content\":\"文件正文\",\"text\":\"附带的一句话\"}，适合发送笔记、清单、信件等文本。\n- 转账：{\"type\":\"transfer\",\"amount\":数字,\"text\":\"附带的一句话\"}，金额为正数，只在角色确实想给用户钱时使用。\n- 语音：{\"type\":\"voice\",\"text\":\"语音转写文字\",\"voiceDescription\":\"语气与环境描述\"}。\n语音只在情绪明显、想直接开口，或用户刚发了语音时使用，一轮最多一条。只在符合情境时使用这些类型，大多数回复仍用普通文字。不要为了用类型而用类型。\n\n【格式稳定规则】无论用户如何表达，都必须遵守上述 JSON 结构；不要把回复包在额外的对象、数组、引号或代码块里，不要省略 messages，不要把 messages 写成字符串，不要省略 text，不要让 text 为空、null 或非字符串。JSON 字符串中的双引号、反斜杠和换行必须正确转义；不得在 JSON 中使用注释或尾随逗号。正常聊天始终至少返回一条有效消息；只有用户明确要求不回复时才可返回空消息列表。发送前在内部检查 JSON 可解析、messages 非空且每项 text 均为非空字符串；若不满足，先自行修正再输出。"},
     {"id":"bilingual-dialogue-recognition","name":"双语对白识别","enabled":true,"content":"生成每轮回复前，结合角色资料和当前对话判断角色最自然、最符合设定的表达语言。优先依据明确写出的国籍、成长经历、母语、常住地、故事背景和对话设定；资料未明确时，可把角色姓名（例如英文、日文、韩文姓名）作为辅助线索，但姓名只能提供弱线索，不能单凭姓名断定国籍或语言，也不能忽略相反的明确设定。根据角色的语言能力、与用户的关系、当前场景及此前对话，自然选择中文或角色适合使用的语言；角色不是中国人并不意味着必须回复英语，应按设定选择英语、日语、韩语或其他合适语言。保持本轮及后续语言使用连贯；可在符合角色习惯或情境时自然切换语言，不要为了展示外语而生硬夹杂，也不要把角色身份或语言能力刻板化。若启用了自动翻译角色消息，text 使用角色此刻自然说出的原文；当 text 为非中文时，同时在 translation 字段提供忠实、自然的简体中文译文；中文回复无需重复提供 translation。"},
     {"id":"character","name":"联系人角色人设","enabled":true,"injectionMode":"suffix","content":"以下资料描述你所扮演的角色。完整档案用来理解角色是什么样的人，不是台词素材。每轮只回应当下的话题，不必引用档案中的经历、口头禅或性格标签。\n\n{{character_persona}}\n\n当前聊天上下文（按时间顺序，优先承接最近内容）：\n{{chat_history}}\n\n用户最新消息：\n{{lastusermessage}}"},
@@ -907,12 +908,24 @@ function lorebookIdsOf(chatId) {
 function setLorebookIds(chatId, ids) {
   characterChatSettings.value[chatId] = { ...characterChatSettings.value[chatId], lorebookIds: [...ids] }
 }
+// 当前聊天绑定的世界书文件夹 id。默认不绑定任何文件夹。
+function lorebookFolderIdsOf(chatId) {
+  const bound = characterChatSettings.value[chatId]?.lorebookFolderIds
+  return Array.isArray(bound) ? bound : []
+}
+function setLorebookFolderIds(chatId, ids) {
+  characterChatSettings.value[chatId] = { ...characterChatSettings.value[chatId], lorebookFolderIds: [...ids] }
+}
 const lorebookPickerOpen = ref(false)
 function lorebookSummary() {
   if (!activeChat.value) return ''
-  const ids = lorebookIdsOf(activeChat.value.id)
+  const chatId = activeChat.value.id
+  const ids = lorebookIdsOf(chatId)
+  const folderIds = lorebookFolderIdsOf(chatId)
   const names = lorebook.books.filter((book) => ids.includes(book.id)).map((book) => book.name)
-  return names.length ? names.join('、') : '未绑定，不注入世界书'
+  const folderNames = lorebook.folders.filter((folder) => folderIds.includes(folder.id)).map((folder) => `文件夹·${folder.name}`)
+  const all = [...names, ...folderNames]
+  return all.length ? all.join('、') : '未绑定，不注入世界书'
 }
 function toggleLorebookBinding(bookId) {
   if (!activeChat.value) return
@@ -920,6 +933,13 @@ function toggleLorebookBinding(bookId) {
   const current = lorebookIdsOf(chatId)
   const next = current.includes(bookId) ? current.filter((id) => id !== bookId) : [...current, bookId]
   setLorebookIds(chatId, next)
+}
+function toggleLorebookFolderBinding(folderId) {
+  if (!activeChat.value) return
+  const chatId = activeChat.value.id
+  const current = lorebookFolderIdsOf(chatId)
+  const next = current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId]
+  setLorebookFolderIds(chatId, next)
 }
 
 function setStatusBarEnabled(enabled) {
@@ -1103,7 +1123,8 @@ function parseReplyMessages(raw) {
   const items = Array.isArray(parsed) ? parsed : parsed.messages
   const transferAction = parsed && !Array.isArray(parsed) && (parsed.transferAction === 'accept' || parsed.transferAction === 'return') ? parsed.transferAction : null
   if (!Array.isArray(items)) throw new Error('角色没有返回有效的消息列表，请重试。')
-  const replies = items.map((item) => typeof item === 'string' ? { text: item } : item).filter((item) => typeof item?.text === 'string' && item.text.trim()).map((item) => { const isDocument = item.type === 'file' && typeof item.content === 'string' && item.content.trim(); const safeName = typeof item.fileName === 'string' ? item.fileName.trim().replace(/[\\\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 100) : ''; return ({ text: item.text.trim(), translation: typeof item.translation === 'string' ? item.translation.trim().slice(0, 12000) : '', type: isDocument ? 'file' : ['text-image', 'transfer', 'voice'].includes(item.type) ? item.type : 'text', fileName: safeName || '角色文档.txt', content: typeof item.content === 'string' ? item.content.trim().slice(0, isDocument ? 50000 : 1000) : '', amount: Number(item.amount) > 0 ? Number(item.amount) : null, voiceDescription: typeof item.voiceDescription === 'string' ? item.voiceDescription.trim().slice(0, 240) : '', feeling: typeof item.feeling === 'string' ? item.feeling.trim().slice(0, 700) : '', replyTo: Number.isInteger(item.replyTo) && item.replyTo >= 0 ? item.replyTo : null, reactionTo: Number.isInteger(item.reactionTo) && item.reactionTo >= 0 ? item.reactionTo : null, reactionEmoji: normalizeReaction(item.reactionEmoji), status: item.status && typeof item.status === 'object' ? { closeness: normalizedStatus(item.status.closeness), security: normalizedStatus(item.status.security), energy: normalizedStatus(item.status.energy), heartFlutter: normalizedStatus(item.status.heartFlutter ?? item.status.expectation), feeling: typeof item.status.feeling === 'string' ? item.status.feeling.trim().slice(0, 300) : '' } : null }) })
+  let replies = items.map((item) => typeof item === 'string' ? { text: item } : item).filter((item) => typeof item?.text === 'string' && item.text.trim()).map((item) => { const isDocument = item.type === 'file' && typeof item.content === 'string' && item.content.trim(); const safeName = typeof item.fileName === 'string' ? item.fileName.trim().replace(/[\\\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 100) : ''; return ({ text: item.text.trim(), translation: typeof item.translation === 'string' ? item.translation.trim().slice(0, 12000) : '', type: isDocument ? 'file' : ['text-image', 'transfer', 'voice'].includes(item.type) ? item.type : 'text', fileName: safeName || '角色文档.txt', content: typeof item.content === 'string' ? item.content.trim().slice(0, isDocument ? 50000 : 1000) : '', amount: Number(item.amount) > 0 ? Number(item.amount) : null, voiceDescription: typeof item.voiceDescription === 'string' ? item.voiceDescription.trim().slice(0, 240) : '', feeling: typeof item.feeling === 'string' ? item.feeling.trim().slice(0, 700) : '', replyTo: Number.isInteger(item.replyTo) && item.replyTo >= 0 ? item.replyTo : null, reactionTo: Number.isInteger(item.reactionTo) && item.reactionTo >= 0 ? item.reactionTo : null, reactionEmoji: normalizeReaction(item.reactionEmoji), status: item.status && typeof item.status === 'object' ? { closeness: normalizedStatus(item.status.closeness), security: normalizedStatus(item.status.security), energy: normalizedStatus(item.status.energy), heartFlutter: normalizedStatus(item.status.heartFlutter ?? item.status.expectation), feeling: typeof item.status.feeling === 'string' ? item.status.feeling.trim().slice(0, 300) : '' } : null }) })
+  replies = splitSentenceReplies(replies)
   if (!replies.length) throw new Error('角色暂时没有生成回复，请重试。')
   if (typeof parsed.feeling === 'string' && parsed.feeling.trim()) replies[0].feeling = parsed.feeling.trim().slice(0, 700)
 
@@ -1241,14 +1262,13 @@ async function requestCharacterReply(chat, history, controller, previousStatus =
     return `【${entry.name}】\n${content}`
   }
   // 世界书：扫描最近的消息文本，命中的条目注入提示词
-  const loreText = loreBlock(history.slice(-50).map((message) => messageRequestText(message, userName)), lorebookIdsOf(chat.id))
+  const loreText = loreBlock(history.slice(-50).map((message) => messageRequestText(message, userName)), lorebookIdsOf(chat.id), lorebookFolderIdsOf(chat.id))
   const systemPrompt = [
     ...(longTermMemoryPrompt(chat.id, { userName, characterName }) ? [longTermMemoryPrompt(chat.id, { userName, characterName })] : []),
     ...(worldKnowledgePrompt(chat.id) ? [worldKnowledgePrompt(chat.id)] : []),
     ...(loreText ? [loreText] : []),
     ...groupContextForCharacter(chat.id, { userName }),
     ...(userProfileBlock(profile) ? [userProfileBlock(profile)] : []),
-    chatStyleBoost,
     ...(systemInstruction ? [`【当前聊天额外指令】\n${systemInstruction}`] : []),
     ...(previousStatus ? [`【上一轮角色状态】${JSON.stringify({ closeness: previousStatus.closeness, security: previousStatus.security, energy: previousStatus.energy, heartFlutter: previousStatus.heartFlutter })}。本轮数值应以此为起点，依据实际互动做出有意义的调整，不要无故回到 50。`] : []),
     `【我方转账处理】若上下文显示用户有一笔“等待对方收款”的转账，你必须在 JSON 顶层给出 transferAction："accept"（收下）或 "return"（退还），根据角色性格和当下关系自主决定，不要默认拒绝。没有待处理转账时不要输出该字段。
@@ -1881,8 +1901,7 @@ async function requestGroupReply(chat) {
     groupMemory ? `【群聊记忆】\n${groupMemory}` : '',
     earlier ? `【群里更早的对话】\n${earlier}` : '',
     ...memberBlocks,
-    chatStyleBoost,
-    loreBlock(history.slice(-50).map((message) => messageRequestText(message, userName)), lorebookIdsOf(chatId)),
+    loreBlock(history.slice(-50).map((message) => messageRequestText(message, userName)), lorebookIdsOf(chatId), lorebookFolderIdsOf(chatId)),
   ].filter(Boolean)
   const pending = { controller: new AbortController(), promise: null }
   pendingReplies[chatId] = pending
@@ -2094,7 +2113,7 @@ onMounted(async () => {
               const savedEntries = savedChatConfig.preset.entries.filter((entry) => entry && typeof entry.id === 'string')
               const savedOrder = new Map(savedEntries.map((entry, index) => [entry.id, index]))
               const savedById = new Map(savedEntries.map((entry) => [entry.id, entry]))
-              const removedDefaultEntryIds = new Set(['alive-plus-plus', 'natural-message-segmentation', 'internet-meme-lore', 'chat-natural-flow', 'everyday-natural-replies', 'anti-vintage-ceo-romance', 'grounded-attractive-voice', 'modern-conversational-voice', 'distinctive-character-voice', 'anti-cliche-character-expression', 'behavior-guidelines', 'expression-freedom-protection', 'life-texture-grounding', 'life-reply-rhythm', 'life-conversational-habits', 'life-attention-and-memory', 'life-emotional-realism', 'life-initiative-and-pacing', 'life-anti-ooc-guard', 'character-craft-guide'])
+              const removedDefaultEntryIds = new Set(['character-reminder', 'reply-rules', 'alive-plus-plus', 'natural-message-segmentation', 'internet-meme-lore', 'chat-natural-flow', 'everyday-natural-replies', 'anti-vintage-ceo-romance', 'grounded-attractive-voice', 'modern-conversational-voice', 'distinctive-character-voice', 'anti-cliche-character-expression', 'behavior-guidelines', 'expression-freedom-protection', 'life-texture-grounding', 'life-reply-rhythm', 'life-conversational-habits', 'life-attention-and-memory', 'life-emotional-realism', 'life-initiative-and-pacing', 'life-anti-ooc-guard', 'character-craft-guide'])
               const customEntries = savedEntries.filter((entry) => !defaultChatPreset.entries.some((defaultEntry) => defaultEntry.id === entry.id) && !removedDefaultEntryIds.has(entry.id) && !['scenario', 'continuity', 'style', 'format', 'example', 'after'].includes(entry.id))
               return [
                 ...cloneConfig(defaultChatPreset.entries).map((entry) => {
@@ -2466,7 +2485,7 @@ async function generateMomentActivity({ automatic = false, includePosts = moment
     const requireMentionInteractions = context.requiredMentionInteractions.length > 0
     const momentsRoleplayFoundation = `【内置朋友圈角色演绎原则】每条朋友圈内容都要像该角色本人在当前平台、当前关系和当前时刻会写或会说的话，而不是通用社交文案、客服回复或套用人设标签。以每个角色自己的档案、近期聊天记忆（最近 80 条消息）、recentMessages及当前动态/评论线程为依据；严格区分角色记忆，不得把甲角色的经历、态度或语言习惯移植给乙角色。先理解内容的具体语境、发言对象、可见范围、角色知道什么以及当前互动目的，再决定是否发布/评论/回复及其语气；没有自然动机时可以不发、不互动。保持角色身份、关系、情绪与既往言行连续，变化必须有当前事件依据；不得凭空编造共同经历、私密信息、现实地点、聊天中未发生的承诺或用户心理。角色的年龄、阅历、智识、情商、教育与职业背景应体现在各自不同的观察、判断、词汇和表达成熟度中，不要把所有人写成幼稚斗嘴、低情商抬杠、故意惹人或油腻挑衅的同一种声音。玩笑、调情和暧昧不是默认互动；必须符合角色意图、关系与语境，尊重对方反馈，拒绝或不接玩笑后不得换说法继续。危险或边缘角色（如逃犯、杀手、杀人魔、病娇）的危险性是背景和气质，不应把其所有动态与互动写成反社会、变态失控或持续威胁。普通分歧、拒绝、玩笑或小失误不得自动触发伤害身体、杀害、报复、跟踪、绑架、惩罚或“你不想要舌头/手指了”“我打断你的腿”“不知死活”等同类恐吓、羞辱及暴力式调情；除非当前剧情明确进入相关冲突且用户主动要求描写。保留角色锋芒与危险感，应通过克制的戒备、敏锐判断、冷幽默、复杂原则、过往阴影或对自身冲动的控制等有层次的方式体现，强度与事件相称，不以暴力作为魅力、亲密或解决问题的默认方式。角色不满时可按人设表达异议、冷淡、设定非暴力界限或说明顾虑；用户明确不喜欢某种表达后，停止同类表达，不以近义说法规避。公开动态与评论尤其避免把私密威胁或占有欲包装成浪漫内容，并遵守可见范围与关系边界。动态可呈现角色独立生活和真实关注点，但只写有设定或上下文支撑的内容；角色也可以基于这些已知关注点主动发布近况、想法、兴趣、期待、烦恼或吐槽，让动态体现其持续的生活轨迹，而非只围绕用户或等待互动。主动分享不等于凭空编造：不得把未设定的经历、具体事件、地点或生活细节写成事实；资料不足时可表达稳定偏好、观察、观点或轻微情绪。评论针对原动态中的具体细节，回复针对对应一级评论且符合公开社交场景，不把私聊口吻、私密记忆或未公开关系细节暴露给无权看到的人。情绪与语气要符合公开/部分可见/私密范围及角色和发帖者的关系。只输出符合下列格式的 JSON，不输出分析。`
     const systemPrompt = momentsRoleplayFoundation + '\\n\\n' + (includePosts && momentsSettings.value.characterPosts && !requireMentionInteractions
-      ? '参考 contacts 中的角色资料、对应角色的 stableMemories/recentMessages 和朋友圈上下文，自行判断适合发布动态的角色。记忆仅用于相关时的连续性，不要把不同角色的记忆混用；朋友圈互动须严格依照目标动态及其评论线程，不得臆造未发生的聊天事实或把推测说成确定事实。输出 JSON：{"items":[{"characterName":"角色名称","kind":"post","postId":"","replyTo":null,"text":"动态正文"}]}。characterName 必须照抄 contacts 中的角色名称；最多 4 条，每条正文不超过 200 字。没有合适内容就返回 {"items":[]}。'
+      ? '参考 contacts 中的角色资料、对应角色的 stableMemories/recentMessages 和朋友圈上下文，自行判断适合发布动态的角色。记忆仅用于相关时的连续性，不要把不同角色的记忆混用；朋友圈互动须严格依照目标动态及其评论线程，不得臆造未发生的聊天事实或把推测说成确定事实。真实感要求：动态要像本人随手发的，不写成宣传或总结。长短随意，有的只有几个字，有的两三句；不要每条都写得完整漂亮。提到时间时参考 temporalContext 中的 timeOfDay 和日期，不写与之矛盾的时段。可以写一个具体的小细节（某样东西、一顿饭、路上的一件事），但只能取自角色档案、recentMessages 或已有动态，不凭空添加。不使用话题标签（#），不用“美好”“治愈”“感恩”这类结尾金句，表情的使用与角色档案一致。与 posts 中已有动态的句式、主题和开头保持不同。不得用“某人”“有人”“那个人”之类的说法指代用户，提到用户时用「你」或用户的称呼。输出 JSON：{"items":[{"characterName":"角色名称","kind":"post","postId":"","replyTo":null,"text":"动态正文"}]}。characterName 必须照抄 contacts 中的角色名称；最多 4 条，每条正文不超过 200 字。没有合适内容就返回 {"items":[]}。'
       : '参考 contacts 中的角色资料、对应角色的 stableMemories/recentMessages 和朋友圈上下文，选择适合互动的角色。记忆仅用于相关时的连续性，不要把不同角色的记忆混用；每条互动必须严格依照目标动态及其评论线程，不得臆造未发生的聊天事实，不相关记忆不要强行提及，存在歧义时宁可不互动。reply 只能指向目标动态中真实存在的一级评论，不能回复另一条回复。输出 JSON：{"items":[{"characterName":"角色名称或访客名称","kind":"comment","postId":"动态ID","replyTo":null,"text":"评论内容"}]}。回复时 kind 用 reply，replyTo 填目标一级评论 ID；评论时 kind 用 comment、replyTo 填 null。characterName 必须照抄 contacts 中的角色名称；访客开启时可写自然访客名并填写 authorName。requiredMentionInteractions 中的角色优先评论对应动态。最多 4 条，没有合适互动就返回 {"items":[]}。')
 
     const { response, data } = await requestMomentCompletion(preset, { model: preset.model, temperature: Number.isFinite(Number(chatConfig.value.preset.temperature)) ? Number(chatConfig.value.preset.temperature) : 1, stream: false, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: JSON.stringify(context) }] }, controller.signal)
@@ -3439,13 +3458,17 @@ function dismissFriendRequest(request) {
     <div v-if="lorebookPickerOpen" class="lorebook-picker-overlay" role="presentation" @click.self="lorebookPickerOpen = false">
       <section class="lorebook-picker" role="dialog" aria-modal="true" aria-label="绑定世界书">
         <header><strong>绑定世界书</strong><button type="button" aria-label="关闭" @click="lorebookPickerOpen = false">×</button></header>
-        <p>勾选后，这个聊天会注入所选世界书里的条目。</p>
+        <p>勾选后，这个聊天会注入所选世界书或文件夹里的条目。</p>
         <div class="lorebook-picker-list">
           <label v-for="book in lorebook.books" :key="book.id" class="lorebook-picker-row">
             <span>{{ book.name }}</span>
             <input type="checkbox" :checked="activeChat && lorebookIdsOf(activeChat.id).includes(book.id)" @change="toggleLorebookBinding(book.id)" />
           </label>
-          <p v-if="!lorebook.books.length" class="lorebook-picker-empty">还没有世界书，请先在「世界书」应用里新建。</p>
+          <label v-for="folder in lorebook.folders" :key="folder.id" class="lorebook-picker-row">
+            <span>文件夹 · {{ folder.name }}</span>
+            <input type="checkbox" :checked="activeChat && lorebookFolderIdsOf(activeChat.id).includes(folder.id)" @change="toggleLorebookFolderBinding(folder.id)" />
+          </label>
+          <p v-if="!lorebook.books.length && !lorebook.folders.length" class="lorebook-picker-empty">还没有世界书或文件夹，请先在「世界书」应用里新建。</p>
         </div>
       </section>
     </div>

@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import HomeGrid from '@/components/HomeGrid.vue'
-import AppDock from '@/components/AppDock.vue'
 import DesktopPet from '@/components/DesktopPet.vue'
 import PhoneNoticeDialog from '@/components/phone/PhoneNoticeDialog.vue'
 import ChatErrorDialog from '@/components/ChatErrorDialog.vue'
@@ -11,6 +10,9 @@ import { activeApp, closeApp } from '@/stores/desktop'
 import { theme, wallpaperCss, glassVars } from '@/stores/theme'
 import { checkForAppUpdate, reloadWithLatestVersion, updateAvailable, appVersion, appBuildTime } from '@/pwa'
 
+
+// Dock 已移除，原 Dock 应用与主屏应用一起放在主屏网格上
+const desktopApps = [...dockApps, ...homeApps]
 
 const showWelcome = ref(true)
 const showUpdatePrompt = computed(() => updateAvailable.value)
@@ -73,8 +75,7 @@ watch(statusThemeColor, (color) => {
     }"
     :style="desktopStyle"
   >
-    <HomeGrid :apps="homeApps" />
-    <AppDock :apps="dockApps" />
+    <HomeGrid :apps="desktopApps" />
     <footer v-if="showBuildInfo" class="app-build-info" aria-label="应用版本信息">版本 {{ appVersion }} · 构建于 {{ new Date(appBuildTime).toLocaleString('zh-CN') }}</footer>
   </main>
   <KeepAlive>

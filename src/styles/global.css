@@ -4,7 +4,7 @@
   --cols: 4;                         /* 横向 4 格 */
   --rows: 6;                         /* 纵向 6 格 */
   --icon-size: min(15vw, 64px);
-  --icon-radius: 24%;
+  --icon-radius: 50%;
   --side-pad: 6vw;
 }
 

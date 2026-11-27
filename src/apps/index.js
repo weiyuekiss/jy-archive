@@ -8,9 +8,8 @@ const SettingsApp = defineAsyncComponent(() => import('@/pages/SettingsApp.vue')
 const CharacterApp = defineAsyncComponent(() => import('@/pages/CharacterApp.vue'))
 const LorebookApp = defineAsyncComponent(() => import('@/pages/LorebookApp.vue'))
 
-// 桌面布局（与 global.css 中的 --cols / --rows 保持一致）
+// 桌面横向 4 列；纵向行数由屏幕高度决定，见 stores/desktop.js 的 gridRows
 export const GRID_COLS = 4
-export const GRID_ROWS = 6
 
 // 底部 Dock 栏应用，按顺序占据 4 个位置
 export const dockApps = [

@@ -3,8 +3,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import WidgetView from './widgets/WidgetView.vue'
 import PhotoPickerDialog from './widgets/PhotoPickerDialog.vue'
-import { GRID_COLS, GRID_ROWS } from '@/apps'
-import { canPlace, desktopWidgets, moveWidget, moveApp, appPositions, desktopPageCount, currentDesktopPage, occupiedCells, pushAside, removeWidget, updateWidgetData } from '@/stores/desktop'
+import { GRID_COLS } from '@/apps'
+import { canPlace, desktopWidgets, moveWidget, moveApp, appPositions, desktopPageCount, currentDesktopPage, gridRows, occupiedCells, pushAside, removeWidget, updateWidgetData } from '@/stores/desktop'
 
 const props = defineProps({
   apps: { type: Array, default: () => [] }
@@ -15,12 +15,15 @@ const areaEl = ref(null)
 const gridEl = ref(null)
 const cell = ref(0)
 let observer = null
+// 格子边长由宽度决定（正方形）；行数由可用高度决定，至少 6 行，保证上下半屏都能放置
 function measure() {
   const el = areaEl.value
   if (!el) return
   const s = getComputedStyle(el)
   const w = el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
-  cell.value = Math.floor(Math.min(w / GRID_COLS, el.clientHeight / GRID_ROWS))
+  cell.value = Math.floor(w / GRID_COLS)
+  if (cell.value <= 0) return
+  gridRows.value = Math.max(6, Math.floor(el.clientHeight / cell.value))
 }
 onMounted(() => {
   measure()
@@ -32,7 +35,8 @@ onBeforeUnmount(() => observer?.disconnect())
 const gridStyle = computed(() => ({
   '--cell': `${cell.value}px`,
   width: `${cell.value * GRID_COLS}px`,
-  height: `${cell.value * GRID_ROWS}px`
+  height: `${cell.value * gridRows.value}px`,
+  '--rows': gridRows.value
 }))
 // 翻页方向：1 表示向右翻（内容从右侧进入），-1 表示向左翻
 const pageDirection = ref(1)
@@ -112,7 +116,7 @@ const visibleWidgets = computed(() => desktopWidgets.filter((w) => (Number(w.pag
 const freeCells = computed(() => {
   const used = occupiedCells(null, currentDesktopPage.value)
   const cells = []
-  for (let i = 0; i < GRID_COLS * GRID_ROWS; i++) if (!used.has(i)) cells.push({ index: i, x: i % GRID_COLS, y: Math.floor(i / GRID_COLS) })
+  for (let i = 0; i < GRID_COLS * gridRows.value; i++) if (!used.has(i)) cells.push({ index: i, x: i % GRID_COLS, y: Math.floor(i / GRID_COLS) })
   return cells
 })
 const appDrag = reactive({ id: null, startX: 0, startY: 0, dx: 0, dy: 0, tx: 0, ty: 0, page: 0, ok: true })
@@ -124,7 +128,7 @@ function appPos(app, i) {
   const defaults = [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }]
   const candidate = defaults[i] || { x: i % GRID_COLS, y: Math.floor(i / GRID_COLS) }
   if (canPlace(candidate.x, candidate.y, 1, 1, null, 0, app.id)) return { ...candidate, page: 0 }
-  for (let y = 0; y < GRID_ROWS; y++) for (let x = 0; x < GRID_COLS; x++) if (canPlace(x, y, 1, 1, null, 0, app.id)) return { x, y, page: 0 }
+  for (let y = 0; y < gridRows.value; y++) for (let x = 0; x < GRID_COLS; x++) if (canPlace(x, y, 1, 1, null, 0, app.id)) return { x, y, page: 0 }
   return { x: 0, y: 0, page: 0 }
 }
 const visibleApps = computed(() => props.apps.filter((app) => {
@@ -155,7 +159,7 @@ function appMove(e, app) {
   }
   appDrag.dx = e.clientX - appDrag.startX; appDrag.dy = e.clientY - appDrag.startY
   appDrag.tx = Math.max(0, Math.min(GRID_COLS - 1, appPending.p.x + Math.round(appDrag.dx / cell.value)))
-  appDrag.ty = Math.max(0, Math.min(GRID_ROWS - 1, appPending.p.y + Math.round(appDrag.dy / cell.value)))
+  appDrag.ty = Math.max(0, Math.min(gridRows.value - 1, appPending.p.y + Math.round(appDrag.dy / cell.value)))
   const rect = areaEl.value.getBoundingClientRect()
   const nearLeft = e.clientX < rect.left + 24 && currentDesktopPage.value > 0
   const nearRight = e.clientX > rect.right - 24 && currentDesktopPage.value < desktopPageCount.value - 1
@@ -179,19 +183,32 @@ let pending = null
 let tapCandidate = false
 
 
+// 长按或拖动之后，随后那次 click 需要吞掉，否则会误触小组件里的换图按钮
+let widgetClickSuppress = false
+
 function onPointerDown(e, w) {
-  // Interactive widget controls need their own pointer/click sequence; capturing
-  // the pointer on the slot retargets touch events away from those controls.
-  if (e.target.closest('button, a, input, textarea, select, [data-widget-action]')) return
-  e.currentTarget.setPointerCapture(e.pointerId)
+  const onControl = Boolean(e.target.closest('button, a, input, textarea, select, [data-widget-action]'))
+  // 编辑模式下点控件仍交给控件自己处理（如移除按钮）
+  if (onControl && editing.value) return
+  widgetClickSuppress = false
+  // 控件上不捕获指针，保证控件自己的 click 能正常触发；但长按依旧可以拖动
+  if (!onControl) e.currentTarget.setPointerCapture(e.pointerId)
   pending = { w, x: e.clientX, y: e.clientY, el: e.currentTarget }
-  tapCandidate = !editing.value
+  tapCandidate = !editing.value && !onControl
   if (editing.value) return beginDrag()
   pressTimer = setTimeout(() => {
     tapCandidate = false
+    widgetClickSuppress = true
     editing.value = true
     beginDrag()
   }, 450)
+}
+
+function onSlotClickCapture(e) {
+  if (!widgetClickSuppress) return
+  widgetClickSuppress = false
+  e.stopPropagation()
+  e.preventDefault()
 }
 
 function beginDrag() {
@@ -241,7 +258,7 @@ function onPointerMove(e, w) {
   drag.dy = e.clientY - drag.startY
   // 拖动距离换算成格子偏移，四舍五入吸附
   drag.tx = Math.min(Math.max(w.x + Math.round(drag.dx / cell.value), 0), GRID_COLS - w.w)
-  drag.ty = Math.min(Math.max(w.y + Math.round(drag.dy / cell.value), 0), GRID_ROWS - w.h)
+  drag.ty = Math.min(Math.max(w.y + Math.round(drag.dy / cell.value), 0), gridRows.value - w.h)
   setEdgeDirection(edgeDirectionAt(e.clientX))
   drag.page = currentDesktopPage.value
   drag.ok = canPlace(drag.tx, drag.ty, w.w, w.h, w.uid, drag.page)
@@ -333,6 +350,7 @@ const dragFloatY = computed(() => dragOrigin.y + drag.dy)
         @pointermove="onPointerMove($event, w)"
         @pointerup="onPointerUp($event, w)"
         @pointercancel="onPointerUp"
+        @click.capture="onSlotClickCapture"
         @contextmenu.prevent
       >
         <WidgetView :type="w.type" :data="w.data" @custom-action="onWidgetCustomAction(w, $event)" />
@@ -429,7 +447,7 @@ const dragFloatY = computed(() => dragOrigin.y + drag.dy)
   filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.15));
 }
 .drag-float :deep(.widget) { width: 100%; height: 100%; }
-.app-cell.lifted { filter: drop-shadow(0 12px 20px rgba(0,0,0,.15)); }
+.app-cell.lifted { filter: drop-shadow(0 1px 2px rgba(0,0,0,.06)); }
 .page-dots { position: absolute; bottom: 10px; left: 50%; display: flex; gap: 8px; transform: translateX(-50%); }
 .page-dots button { width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%; background: rgba(60,65,70,.28); }
 .page-dots button.on { background: rgba(45,50,55,.78); }

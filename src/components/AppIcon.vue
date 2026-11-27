@@ -79,7 +79,7 @@ const customIcon = computed(() => {
   backdrop-filter: blur(20px) saturate(190%) brightness(106%);
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.82));
   box-shadow:
-    0 10px 24px rgba(0, 0, 0, 0.07),
+    0 1px 3px rgba(0, 0, 0, 0.04),
     inset 0 1.5px 2px rgba(255, 255, 255, 0.95),
     inset 0 -1.5px 2px rgba(255, 255, 255, 0.3);
   --icon-art-bg: transparent;
@@ -122,17 +122,17 @@ const customIcon = computed(() => {
 }
 
 .app-icon.is-glass :deep(svg) {
-  filter: drop-shadow(0 2px 5px rgba(40, 40, 50, 0.12));
+  filter: drop-shadow(0 1px 1px rgba(40, 40, 50, 0.05));
 }
 
 .app-icon.is-frosted {
   background: transparent;
   border: 0;
   color: #2b2b2e;
-  filter: drop-shadow(0 1px 2px rgba(30, 35, 45, 0.12));
+  filter: drop-shadow(0 1px 1px rgba(30, 35, 45, 0.05));
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: 0 5px 16px rgba(35, 42, 52, 0.06);
+  box-shadow: 0 1px 3px rgba(35, 42, 52, 0.04);
 }
 .app-icon.is-frosted :deep(svg) {
   width: 45%;
