@@ -33,22 +33,22 @@ export const apiSettings = reactive({
 
 // User profiles support multiple independent personas while keeping legacy profile data intact.
 function createEmptyProfile(id = `profile-${Date.now()}`) {
-  return { id, avatar: '', name: '', birthday: '', age: '', occupation: '', bio: '' }
+  return { id, avatar: '', name: '', birthday: '', age: '', occupation: '', bio: '', chatPreference: '' }
 }
 
 export const profileSettings = reactive({ currentProfileId: 'profile-default', profiles: [createEmptyProfile('profile-default')] })
-export const userProfile = reactive({ avatar: '', name: '', birthday: '', age: '', occupation: '', bio: '', settingsCover: '' })
+export const userProfile = reactive({ avatar: '', name: '', birthday: '', age: '', occupation: '', bio: '', chatPreference: '', settingsCover: '' })
 
 function applyActiveProfile() {
   const active = profileSettings.profiles.find((profile) => profile.id === profileSettings.currentProfileId) || profileSettings.profiles[0]
   if (!active) return
   profileSettings.currentProfileId = active.id
-  for (const key of ['avatar', 'name', 'birthday', 'age', 'occupation', 'bio']) userProfile[key] = active[key] || ''
+  for (const key of ['avatar', 'name', 'birthday', 'age', 'occupation', 'bio', 'chatPreference']) userProfile[key] = active[key] || ''
 }
 
 function syncActiveProfile() {
   const active = profileSettings.profiles.find((profile) => profile.id === profileSettings.currentProfileId)
-  if (active) Object.assign(active, Object.fromEntries(['avatar', 'name', 'birthday', 'age', 'occupation', 'bio'].map((key) => [key, userProfile[key]])))
+  if (active) Object.assign(active, Object.fromEntries(['avatar', 'name', 'birthday', 'age', 'occupation', 'bio', 'chatPreference'].map((key) => [key, userProfile[key]])))
 }
 
 export const isSettingsLoaded = ref(false)
@@ -78,7 +78,7 @@ async function initSettings() {
         profileSettings.currentProfileId = savedProfile.currentProfileId || profileSettings.profiles[0].id
       } else {
         const legacyProfile = createEmptyProfile('profile-default')
-        for (const key of ['avatar', 'name', 'birthday', 'age', 'occupation', 'bio']) legacyProfile[key] = savedProfile[key] || ''
+        for (const key of ['avatar', 'name', 'birthday', 'age', 'occupation', 'bio', 'chatPreference']) legacyProfile[key] = savedProfile[key] || ''
         profileSettings.profiles = [legacyProfile]
         profileSettings.currentProfileId = legacyProfile.id
       }
@@ -184,6 +184,7 @@ export function resetUserProfile() {
   userProfile.age = ''
   userProfile.occupation = ''
   userProfile.bio = ''
+  userProfile.chatPreference = ''
   userProfile.settingsCover = ''
 }
 

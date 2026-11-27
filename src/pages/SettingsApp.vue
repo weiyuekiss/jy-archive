@@ -1,6 +1,7 @@
 <script setup>
 // 设置应用：iOS 26 风格的分组列表，无顶栏
 import { ref } from 'vue'
+import { Cat, Database, PawPrint, Plug, UserRound } from 'lucide-vue-next'
 import { exportAllData, replaceAllData } from '@/stores/db'
 import { userProfile } from '@/stores/settings'
 import { petSettings, persistPetSettings } from '@/stores/pet'
@@ -118,7 +119,7 @@ function navigateTo(page) {
 
         <section class="ios-group" aria-label="桌宠">
           <label class="ios-row ios-row-switch">
-            <span class="ios-icon ios-icon-blue" aria-hidden="true">猫</span>
+            <span class="ios-icon ios-icon-blue" aria-hidden="true"><Cat :size="18" :stroke-width="2" /></span>
             <span class="ios-row-text">桌宠白猫</span>
             <input
               v-model="petSettings.enabled"
@@ -132,22 +133,22 @@ function navigateTo(page) {
 
         <section class="ios-group" aria-label="设置项目">
           <button class="ios-row" type="button" aria-label="进入 API 配置" @click="navigateTo('api')">
-            <span class="ios-icon ios-icon-blue" aria-hidden="true">API</span>
+            <span class="ios-icon ios-icon-blue" aria-hidden="true"><Plug :size="18" :stroke-width="2" /></span>
             <span class="ios-row-text">API 配置</span>
             <span class="ios-chevron" aria-hidden="true">›</span>
           </button>
           <button class="ios-row" type="button" aria-label="进入桌宠设置" @click="navigateTo('pet')">
-            <span class="ios-icon ios-icon-blue" aria-hidden="true">宠</span>
+            <span class="ios-icon ios-icon-blue" aria-hidden="true"><PawPrint :size="18" :stroke-width="2" /></span>
             <span class="ios-row-text">桌宠</span>
             <span class="ios-chevron" aria-hidden="true">›</span>
           </button>
           <button class="ios-row" type="button" aria-label="进入人设配置" @click="navigateTo('profile')">
-            <span class="ios-icon ios-icon-purple" aria-hidden="true">人</span>
+            <span class="ios-icon ios-icon-purple" aria-hidden="true"><UserRound :size="18" :stroke-width="2" /></span>
             <span class="ios-row-text">人设配置</span>
             <span class="ios-chevron" aria-hidden="true">›</span>
           </button>
           <button class="ios-row" type="button" aria-label="打开数据存储选项" @click="showStorageDialog = true">
-            <span class="ios-icon ios-icon-green" aria-hidden="true">⇅</span>
+            <span class="ios-icon ios-icon-green" aria-hidden="true"><Database :size="18" :stroke-width="2" /></span>
             <span class="ios-row-text">数据存储</span>
             <span class="ios-chevron" aria-hidden="true">›</span>
           </button>

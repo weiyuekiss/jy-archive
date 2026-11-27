@@ -222,6 +222,17 @@ const hasProfileData = computed(() => {
         </div>
       </div>
       <p class="ios-note">让 AI 了解你的性格、沟通偏好与日常节奏。</p>
+
+      <p class="ios-section-label">聊天偏好</p>
+      <div class="ios-group-wrap">
+        <div class="ios-group">
+          <label class="ios-field ios-field-long">
+            <span>{{ userProfile.chatPreference?.length || 0 }} 字</span>
+            <textarea v-model="userProfile.chatPreference" class="ios-textarea" rows="6" placeholder="例如：语气轻松一点，少用敬语，回复简短，别总是提问……" />
+          </label>
+        </div>
+      </div>
+      <p class="ios-note">描述你希望 AI 在聊天中如何回应你。</p>
     </template>
 
     <!-- 保存 / 新建 / 删除 / 清空 -->

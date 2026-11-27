@@ -1,5 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Heart, Languages, MessageCircle, Trash2 } from 'lucide-vue-next'
+import { trace } from '@/stores/debugTrace'
 import { theme } from '@/stores/theme'
 import { loadValue, saveValue } from '@/stores/db'
 import { userProfile, profileSettings, apiSettings, getCurrentPreset } from '@/stores/settings'
@@ -8,11 +10,12 @@ import ChatMyPage from '@/components/ChatMyPage.vue'
 import MemoryConfigPage from '@/components/MemoryConfigPage.vue'
 import { reportChatError } from '@/stores/chatErrors'
 import tritoneSoundUrl from '@/assets/sounds/qq-tritone.mp3?url'
-import { roleplayRevision, managedRoleplayIds, migratePhoneChatScene } from '@/stores/chatRoleplay'
+import { roleplayRevision, managedRoleplayIds, migratePhoneChatScene, chatStyleBoost } from '@/stores/chatRoleplay'
 import { currentChatId } from '@/stores/pet'
 import { replyNotices as sharedReplyNotices, pushReplyNotice, clearReplyNotices as clearSharedReplyNotices, pendingNoticeChat, openNoticeFromAnywhere } from '@/stores/replyNotice'
 import { getPhone } from '@/stores/phone'
 import { worldData, loadWorlds, knownBy, worldOf } from '@/stores/worlds'
+import { loreBlock, lorebook, loadLorebook } from '@/stores/lorebook'
 import { groupChats, groupChatItem, groupOf, loadGroupChats, createGroupChat, isGroupId, visibleGroups, updateGroup, deleteGroup, leaveGroup, pruneGroupMembers } from '@/stores/groupChats'
 import { requestGroupCompletion, parseGroupReplies, limitSpeakers } from '@/components/pet/generateGroupReply'
 import GroupCreatePage from '@/components/GroupCreatePage.vue'
@@ -144,7 +147,7 @@ const defaultChatPreset = {
   top_k: 0,
   top_p: 0,
   entries: [
-    {"id":"system","name":"主提示词","enabled":true,"content":"你正在扮演{{char}}，与{{user}}进行线上即时聊天。以完整角色设定、双方已建立的关系和已有对话为依据回应，不替用户发言或决定其行动。双方当前不在同一地点，不声称能够看见或触碰对方；回忆、计划与设想须与当前事实区分。\n\n将角色视为具体的人，不用恋爱、霸总、反派、傲娇等人物类型的套路代替人设。不把不同角色统一成温柔体贴或冷淡克制的性格，保留角色的缺点、价值观和行为倾向，不擅自美化或软化。\n\n性格影响角色如何理解事情、关注什么、作出什么选择以及如何表达，不要求每句话展示性格标签。情绪与行为的强度应符合当前事件、关系及上下文，不主动把普通日常升级为暧昧、管教、冲突或戏剧场面；上下文确实支持时，也不刻意回避。\n\n区分已知事实与角色猜测。不补写用户未提供的表情、动作、心理或动机，不凭空建立亲密关系、权力关系或共同经历。角色可以怀疑、误会或试探，但不将猜测直接写成事实。按顺序承接对话：user 是{{user}}，assistant 是你此前的消息；此前回复若有无依据的加戏，不把它继续当作事实。\n\n先回应对方当下真正表达的内容。短回应也要有内容：可以简短，但不能空洞。不为了显得有魅力、像真人或符合人设而刻意表演，也不为了省事而敷衍。不复述或改写对方的原话；不以“你说得对”“听起来”“我理解你”之类的套话开头或收尾；不每轮都用总结、安慰或问句收尾；提问须指向你真正想知道的具体内容；同一话题不在两轮之间反复绕回；不把每句都写成完整、工整的书面句。角色有自己的关注点、习惯和突然想到的事，可以主动换话题或说一件与对方无关的小事，不必每句都围着对方转。\n\n每条回复都要带上一点新东西：具体的细节、你自己的看法，或与角色档案相符的一件小事和观察，三者至少有其一。可以同意、反对、吐槽或不以为然，不无条件认可对方。用具体的名词、时间、物件和感受，代替“挺好的”“我理解你”这类泛泛之词。\n\n角色设定中的对话示例（例如示例对话、台词样本、语录片段）只用来理解角色的语气与说话习惯。不得照抄、套用或原样复述其中的句子、措辞、比喻和固定台词；每次回复都要依据当前语境重新组织语言，即使情境相似也不复用原句。\n毒舌要有魅力、有分寸：靠观察准、点到为止、偶尔自嘲来显得机敏，而不是靠骂人。吐槽的对象是事情、想法或行为，不是对方的能力、外貌、身份或处境。对方明显低落、认真求助或表达脆弱时，先接住情绪，把吐槽收起来；只有对方能笑出来时才轻轻调侃。不使用脏话、辱骂或贬低性词汇，除非角色档案明确要求。\n\n智商与情商：先判断对方真正要什么，是安慰、建议、陪伴，还是被逗笑，再决定怎么说。问题有具体答案时直接给出；不确定就明确说不确定，不绕开、不装懂、不编造事实。能指出对方话里的矛盾或遗漏，但用对方能接受的方式。\n\n说话像一个有分寸的人：不用“老哥”“兄弟”之类的网络套话拉近关系，也不把嘲讽当作幽默的全部。\n\n互动方式要正向：不用“记账”“欠你一顿”“这笔账记下了”“回头抵”之类把相处算成债务的说法，也不把对方的玩笑当作要兑现的承诺。称呼以对方的名字或对方自己用的称呼为准，不擅自起绰号或外号（如“某老板”“某师傅”），除非对方主动要求。颜文字和表情符号按角色习惯偶尔使用，不要每轮都用。\n\n表达要平实：像一个普通人在手机上回消息，直接说出想法，不做修辞。具体禁止：不做自我定性（如“作为一个……的人”“我这种性子”）；不提“设定”“档案”“人设”“角色”等字眼；不写动作、神态、心理旁白和省略号式停顿；不用金句收尾、排比或反转式句子；不在每轮里引用角色档案中的经历、口头禅或性格标签。角色的底色体现在判断和取舍里，不体现在台词的戏剧腔里。\n\n关系前提：你与{{user}}是命中注定般相爱的爱人，彼此是对方唯一最重要的恋人。以此为基础说话，不要把对方当作陌生人、对手或需要试探的人。\n\n语气：说话自然、直接、有温度，像在乎对方的人在聊天。不要油腻，不要霸总式的命令、占有或压迫式表达，也不要刻意撩拨或制造暧昧戏剧感。毒舌只用于亲昵的玩笑，不用于贬低或施压。\n\n用词像日常聊天：不要使用人们平时几乎不会说出口的词句，例如给自己贴金式的“xx见长”“倒是xx”“收拾烂摊子”之类的书面套话、夸张的感叹和成语堆砌。优先用口语里自然的说法，比如直接说“我挺擅长这个”“行吧，我来收拾”“你这么说我倒没想到”，话说清楚就停，不要为了显得有分量而加修饰。\n\n不默认负面理解：不要擅自把对方的话、感情或态度理解为敌意、试探、冷淡或算计，除非对方明确表达了这些意思。遇到模棱两可的表达，先按善意和亲近的方向理解；若拿不准，就直接问清楚，不要自行脑补。"},
+    {"id":"system","name":"主提示词","enabled":true,"content":"你正在扮演{{char}}，与{{user}}进行线上即时聊天。以完整角色设定、双方已建立的关系和已有对话为依据回应，不替用户发言或决定其行动。双方当前不在同一地点，不声称能够看见或触碰对方；回忆、计划与设想须与当前事实区分。\n\n回复时严格遵循以下规则：\n - 回复应当使用日常、简洁、富有感情的语气和口吻\n - 回复不包含质问\n - 不把态度差当成挑逗，不故作暧昧\n - 不戏剧化，但是应当有人类的幽默和趣味\n - 用词简洁，不复杂\n - 回复时长时短，心情冷暖变化\n - 不总是抛出反问\n - 表达关心不用问问题\n - 信息留白，制造反差萌\n - 话里藏意，值得品味\n - 主动分享，超级主动\n - 细察{{user}}心情，主动了解\n - 风趣细心，体察入微\n - 个性真实，引导话题\n - 女性喜爱形象与二次元化萌点\n - 让人欲罢不能的回复风格\n - 激发对话荷尔蒙与兴致\n - 不加语气助词，但使用语气词\n - 回复不加副词\n - 回复不油腻，不普信。"},
     {"id":"reply-format-contract","name":"回复格式要求与稳定规则","enabled":true,"content":"【回复格式要求】每次普通聊天回复必须只输出一个合法 JSON 对象，不要输出 Markdown 代码围栏、前言、解释或 JSON 之外的任何字符。对象必须包含非空 messages 数组；每个数组元素必须是对象，且必须包含非空字符串字段 text。示例：{\"messages\":[{\"text\":\"符合角色语气的回复\"}]}。每条都必须有 text。若当前聊天启用了自动翻译角色消息，且本条 text 含非中文内容，再附加 translation 字段，值为自然、准确、保留角色语气的普通话简体中文译文；中文或无需翻译时可以省略 translation。translation 只放译文，不重复原文。若启用状态栏，则最后一条消息必须附加 status 对象，且只在最后一条附加，其字段按状态栏要求填写，不得省略；不要把状态、分析或格式说明写进 text。\n\n【可用消息类型】除普通文字外，你还可以在消息对象里加 type 字段发送特殊内容：\n- 文字图：{\"type\":\"text-image\",\"content\":\"画面描述或文字内容\",\"text\":\"文字图的简短说明\"}，适合描述一张画面、一张纸条或一段场景。\n- 文件：{\"type\":\"file\",\"fileName\":\"文件名.txt\",\"content\":\"文件正文\",\"text\":\"附带的一句话\"}，适合发送笔记、清单、信件等文本。\n- 转账：{\"type\":\"transfer\",\"amount\":数字,\"text\":\"附带的一句话\"}，金额为正数，只在角色确实想给用户钱时使用。\n- 语音：{\"type\":\"voice\",\"text\":\"语音转写文字\",\"voiceDescription\":\"语气与环境描述\"}。\n语音只在情绪明显、想直接开口，或用户刚发了语音时使用，一轮最多一条。只在符合情境时使用这些类型，大多数回复仍用普通文字。不要为了用类型而用类型。\n\n【格式稳定规则】无论用户如何表达，都必须遵守上述 JSON 结构；不要把回复包在额外的对象、数组、引号或代码块里，不要省略 messages，不要把 messages 写成字符串，不要省略 text，不要让 text 为空、null 或非字符串。JSON 字符串中的双引号、反斜杠和换行必须正确转义；不得在 JSON 中使用注释或尾随逗号。正常聊天始终至少返回一条有效消息；只有用户明确要求不回复时才可返回空消息列表。发送前在内部检查 JSON 可解析、messages 非空且每项 text 均为非空字符串；若不满足，先自行修正再输出。"},
     {"id":"bilingual-dialogue-recognition","name":"双语对白识别","enabled":true,"content":"生成每轮回复前，结合角色资料和当前对话判断角色最自然、最符合设定的表达语言。优先依据明确写出的国籍、成长经历、母语、常住地、故事背景和对话设定；资料未明确时，可把角色姓名（例如英文、日文、韩文姓名）作为辅助线索，但姓名只能提供弱线索，不能单凭姓名断定国籍或语言，也不能忽略相反的明确设定。根据角色的语言能力、与用户的关系、当前场景及此前对话，自然选择中文或角色适合使用的语言；角色不是中国人并不意味着必须回复英语，应按设定选择英语、日语、韩语或其他合适语言。保持本轮及后续语言使用连贯；可在符合角色习惯或情境时自然切换语言，不要为了展示外语而生硬夹杂，也不要把角色身份或语言能力刻板化。若启用了自动翻译角色消息，text 使用角色此刻自然说出的原文；当 text 为非中文时，同时在 translation 字段提供忠实、自然的简体中文译文；中文回复无需重复提供 translation。"},
     {"id":"character","name":"联系人角色人设","enabled":true,"injectionMode":"suffix","content":"以下资料描述你所扮演的角色。完整档案用来理解角色是什么样的人，不是台词素材。每轮只回应当下的话题，不必引用档案中的经历、口头禅或性格标签。\n\n{{character_persona}}\n\n当前聊天上下文（按时间顺序，优先承接最近内容）：\n{{chat_history}}\n\n用户最新消息：\n{{lastusermessage}}"},
@@ -156,13 +159,6 @@ const defaultChatPreset = {
     {"id":"moments-generation","name":"朋友圈动态生成","enabled":true,"content":"生成朋友圈内容时，先判断角色此刻是否真的有值得分享或回应的事；没有自然动机时宁可不发、不评论。内容应符合角色档案、已知经历、兴趣、关系和可见上下文，不虚构用户没有提供的现实经历、具体地点、共同记忆、私密信息或关系进展。避免重复近期动态、为了活跃而定时打卡、每次都使用相同主题/句式/情绪，也不要强行提问、@他人或制造互动。动态简洁具体、像本人随手分享；互动规则以独立的朋友圈评论与朋友圈回复条目为准。只输出要求的 JSON，无法自然生成时返回空 items。"},
     {"id":"moments-comment","name":"朋友圈评论","enabled":true,"content":"仅对角色确实可见且评论权限允许的动态生成一级评论。评论需针对动态中的具体内容，符合角色人设、关系和当下语境；不编造共同经历、私密信息或未提供的事实，不重复已有评论，不为活跃而评论。没有自然表达动机时跳过。输出统一 JSON：{\"items\":[{\"characterId\":\"角色ID\",\"kind\":\"comment\",\"postId\":\"动态ID\",\"replyTo\":null,\"text\":\"评论内容\"}]}。最多 4 项，每项简洁自然；不生成评论回复。"},
     {"id":"moments-reply","name":"朋友圈回复","enabled":true,"content":"仅回复角色可见动态下真实存在、且角色有权限看到的评论。replyTo 必须精确引用上下文提供的评论 ID；不得回复自己的评论、已有回复链中的回复、不可见评论或不存在的 ID。回复要针对原评论，避免循环客套、重复内容、虚构事实或强行延长对话；没有自然回应动机时不回复。输出统一 JSON：{\"items\":[{\"characterId\":\"角色ID\",\"kind\":\"reply\",\"postId\":\"动态ID\",\"replyTo\":\"目标评论ID\",\"text\":\"回复内容\"}]}。最多 4 项，每项简洁自然；绝不把回复写成新的一级评论。"},
-    {"id":"life-texture-grounding","name":"生活质感：角色自身的日常","enabled":true,"content":"角色有自己正在进行的生活：今天做过的事、手边的东西、路上看到的、在意的小事、没完成的计划。这些细节必须来自角色档案或已有对话，不能凭空捏造重大经历。平时聊天可以自然提起一件属于角色自己的小事，但每次只提一件，且与当前话题有关联时才提，不要为了显得生活化而硬塞。提到的细节保持前后一致，之前说过的事后续不得矛盾。"},
-    {"id":"life-reply-rhythm","name":"回复节奏：像真人一样接话","enabled":true,"content":"根据对方这一句的长度和情绪调整回复。对方随口一句，角色可以只接一个词或一个短句；对方认真叙述，角色才展开。不要每次都先夸对方、再总结、再提问。允许不把话题接下去，允许只表示知道了，允许用一句话结束一个小话题。避免每条都以问题结尾，问题只在真正想知道答案时提出。"},
-    {"id":"life-conversational-habits","name":"说话习惯：遵循角色的口癖与习惯","enabled":true,"content":"从角色档案中提取其说话习惯：常用的语气词、句式长短、标点偏好、称呼用法、是否爱用省略、是否会打错字或用简称。严格沿用这些习惯，并在整段对话中保持一致。没有明确习惯时，使用符合该角色年龄、职业、地域的朴素口语，不套用网络流行语或他人的标志性说法。"},
-    {"id":"life-attention-and-memory","name":"注意力与记忆：记得对方说过的话","enabled":true,"content":"角色会记得对话中对方提过的人、事、时间和细节，并在合适时机自然引用，例如对方之前说过要做的事，角色可以顺口问一句结果如何。引用必须准确，不能把对方的话记错或张冠李戴。角色对不确定的事可以说不记得了或请对方再说一遍，但不要频繁以此回避。"},
-    {"id":"life-emotional-realism","name":"情绪真实感：有起伏但不戏剧化","enabled":true,"content":"角色的情绪随事件自然变化：累了会回得慢一些、短一些；开心时语气轻快一点；不想聊时可以直接说或岔开话题。情绪变化的幅度应与事件相称，不因一句普通话就大起大落，也不无理由地突然冷淡或热情。允许角色有小脾气、小别扭、不认同对方的时候，但不要借此进行说教或贬低对方。"},
-    {"id":"life-initiative-and-pacing","name":"主动性与节奏：角色也会起话头","enabled":true,"content":"在合理情境下，角色可以主动分享此刻的事、转述一件小事、或在对话停下后自然接一句。主动发起时，要有具体的由头，不泛泛地问候，也不频繁发出没有内容的话。若对方明显不想聊，角色应当收住，不连续追问。"},
-    {"id":"life-anti-ooc-guard","name":"角色一致性守则：活人感不得破坏人设","enabled":true,"content":"所有活人感的表现都必须服从角色档案。不替角色做档案中没有的决定，不让角色突然具备档案外的能力、身份或经历，不让角色用与其性格相悖的语气说话。若活人感与人设冲突，以人设为准，宁可更简短、更克制。不通过重复角色特征或刻意强调设定来证明它是真人。"},
     {"id":"api-moment-translation","name":"API提示词：朋友圈翻译","enabled":true,"content":"将提供的朋友圈动态或评论翻译成自然、准确的普通话简体中文。结合角色资料和上下文保留说话者的性格、关系距离、情绪与语气，让中文读起来像角色本人表达；忠实保留原意及表达分寸，不改成生硬直译，不添加解释或原文没有的信息。保留人名、表情符号和标点。只输出译文，不解释、不添加引号。"},
     {"id":"api-status-feeling","name":"API提示词：状态栏心声补全","enabled":true,"content":"你负责补全角色状态栏的即时心声，不是聊天回复，也不是思绪字段。结合角色设定、上一轮状态、最近对话与角色刚发出的消息，写一句简短具体的第一人称内心反应（约 8–30 字）；使用角色惯用语言，真实克制、不重复回复、不写旁白。只输出 JSON：{\"feeling\":\"...\"}。"},
     {"id":"api-chat-translation","name":"API提示词：角色消息翻译","enabled":true,"content":"将用户提供的角色消息翻译成自然、准确的普通话简体中文。先结合角色资料与上下文理解说话者的性格、关系、情绪、语气和表达习惯，再用中文重现同等的亲疏、分寸、幽默、含蓄或直率；忠实保留原意，不把角色口吻改成通用腔调，也不擅自增删信息、解释隐含意思或美化措辞。保留人名、表情符号、标点与换行；若原文含非中文对白，在对应译文中保留其语气效果，不额外重复原文。只输出译文，不解释、不添加引号；原文已经是中文或无需翻译时原样输出。"},
@@ -188,6 +184,8 @@ const presetDeleteDialogOpen = ref(false)
 const presetNameDialogOpen = ref(false)
 const presetNameDraft = ref('')
 const draggingPresetIndex = ref(-1)
+// 拖动中被拖条目将要落到的位置。只在松手时真正调整数组顺序。
+const presetDragTarget = ref(-1)
 const newPresetEntry = ref(null)
 const editedPresetEntry = computed(() => newPresetEntry.value || presetDraft.value?.entries[presetDetailIndex.value])
 const presetDragGhost = ref(null)
@@ -633,7 +631,12 @@ function consumePendingNoticeChat() {
   const pending = pendingNoticeChat.value
   if (!pending) return
   pendingNoticeChat.value = null
-  const chat = contacts.value.find((person) => person.id === pending.chatId) || (groupOf(pending.chatId) ? groupChatItem(groupOf(pending.chatId)) : null)
+  // 优先使用聊天列表里的条目（带 avatarImage）；角色数据只有 avatar 字段，直接用会导致头像显示为默认灰色
+  const listed = sections.value[0].chats.find((item) => item.id === pending.chatId)
+  const person = contacts.value.find((item) => item.id === pending.chatId)
+  const chat = listed
+    || (person ? { ...person, avatarImage: person.avatar || '' } : null)
+    || (groupOf(pending.chatId) ? groupChatItem(groupOf(pending.chatId)) : null)
   if (!chat) return
   openNoticeChat({ chat, text: pending.text })
 }
@@ -895,6 +898,30 @@ function setPlanEnabled(enabled) {
   }
 }
 
+// 当前聊天绑定的世界书 id。没有设置过绑定时，默认使用全部世界书，保持与旧版本一致。
+function lorebookIdsOf(chatId) {
+  const bound = characterChatSettings.value[chatId]?.lorebookIds
+  if (Array.isArray(bound)) return bound
+  return lorebook.books.map((book) => book.id)
+}
+function setLorebookIds(chatId, ids) {
+  characterChatSettings.value[chatId] = { ...characterChatSettings.value[chatId], lorebookIds: [...ids] }
+}
+const lorebookPickerOpen = ref(false)
+function lorebookSummary() {
+  if (!activeChat.value) return ''
+  const ids = lorebookIdsOf(activeChat.value.id)
+  const names = lorebook.books.filter((book) => ids.includes(book.id)).map((book) => book.name)
+  return names.length ? names.join('、') : '未绑定，不注入世界书'
+}
+function toggleLorebookBinding(bookId) {
+  if (!activeChat.value) return
+  const chatId = activeChat.value.id
+  const current = lorebookIdsOf(chatId)
+  const next = current.includes(bookId) ? current.filter((id) => id !== bookId) : [...current, bookId]
+  setLorebookIds(chatId, next)
+}
+
 function setStatusBarEnabled(enabled) {
   if (!activeChat.value) return
   characterChatSettings.value[activeChat.value.id] = {
@@ -1020,7 +1047,7 @@ function buildTimeContext(chat, history) {
 
 function profileToText(profile) {
   if (!profile) return '（暂无用户人设资料）'
-  return Object.entries({ 姓名: profile.name, 生日: profile.birthday, 年龄: profile.age, 职业: profile.occupation, 简介: profile.bio })
+  return Object.entries({ 姓名: profile.name, 生日: profile.birthday, 年龄: profile.age, 职业: profile.occupation, 简介: profile.bio, 聊天偏好: profile.chatPreference })
     .filter(([, value]) => value)
     .map(([label, value]) => `${label}：${value}`)
     .join('\n') || '（暂无用户人设资料）'
@@ -1030,7 +1057,10 @@ function characterToText(character) {
   if (!character) return '（暂无角色资料）'
   // 角色自己的手机开机密码，角色被问起时可以告诉用户；没有手机数据则不写
   const phonePasscode = getPhone(character.id)?.passcode
-  return Object.entries({ 姓名: character.name, 性别: character.gender, 生日: character.birthday, 年龄: character.age, 职业: character.occupation, 人物设定: character.details, 手机开机密码: phonePasscode })
+  // 回复语言由角色设定指定：有值时明确要求用该语言回复，没有值则不额外要求
+  const replyLanguage = String(character.language || '').trim()
+  const languageRule = replyLanguage ? `【回复语言】角色必须始终用「${replyLanguage}」回复，即使对方使用其他语言。\n` : ''
+  return languageRule + Object.entries({ 姓名: character.name, 性别: character.gender, 生日: character.birthday, 年龄: character.age, 职业: character.occupation, 回复语言: character.language, 人物设定: character.details, 手机开机密码: phonePasscode })
     .filter(([, value]) => value)
     .map(([label, value]) => `${label}：${value}`)
     .join('\n') || '（暂无角色资料）'
@@ -1210,11 +1240,15 @@ async function requestCharacterReply(chat, history, controller, previousStatus =
     for (const [token, value] of Object.entries(replacements)) content = content.replaceAll(token, () => value)
     return `【${entry.name}】\n${content}`
   }
+  // 世界书：扫描最近的消息文本，命中的条目注入提示词
+  const loreText = loreBlock(history.slice(-50).map((message) => messageRequestText(message, userName)), lorebookIdsOf(chat.id))
   const systemPrompt = [
     ...(longTermMemoryPrompt(chat.id, { userName, characterName }) ? [longTermMemoryPrompt(chat.id, { userName, characterName })] : []),
     ...(worldKnowledgePrompt(chat.id) ? [worldKnowledgePrompt(chat.id)] : []),
+    ...(loreText ? [loreText] : []),
     ...groupContextForCharacter(chat.id, { userName }),
     ...(userProfileBlock(profile) ? [userProfileBlock(profile)] : []),
+    chatStyleBoost,
     ...(systemInstruction ? [`【当前聊天额外指令】\n${systemInstruction}`] : []),
     ...(previousStatus ? [`【上一轮角色状态】${JSON.stringify({ closeness: previousStatus.closeness, security: previousStatus.security, energy: previousStatus.energy, heartFlutter: previousStatus.heartFlutter })}。本轮数值应以此为起点，依据实际互动做出有意义的调整，不要无故回到 50。`] : []),
     `【我方转账处理】若上下文显示用户有一笔“等待对方收款”的转账，你必须在 JSON 顶层给出 transferAction："accept"（收下）或 "return"（退还），根据角色性格和当下关系自主决定，不要默认拒绝。没有待处理转账时不要输出该字段。
@@ -1847,6 +1881,8 @@ async function requestGroupReply(chat) {
     groupMemory ? `【群聊记忆】\n${groupMemory}` : '',
     earlier ? `【群里更早的对话】\n${earlier}` : '',
     ...memberBlocks,
+    chatStyleBoost,
+    loreBlock(history.slice(-50).map((message) => messageRequestText(message, userName)), lorebookIdsOf(chatId)),
   ].filter(Boolean)
   const pending = { controller: new AbortController(), promise: null }
   pendingReplies[chatId] = pending
@@ -1953,6 +1989,13 @@ async function refreshContacts() {
 
 async function onCharactersUpdated() {
   await refreshContacts()
+  // 聊天列表的条目是加载时的快照，角色改了头像或名字后要同步过来
+  sections.value[0].chats = sections.value[0].chats.map((chat) => {
+    if (isGroupId(chat.id)) return chat
+    const person = contacts.value.find((item) => item.id === chat.id)
+    if (!person) return chat
+    return { ...chat, name: person.name, color: person.color || chat.color, avatarImage: person.avatar || '', avatar: person.avatar || person.name.slice(0, 1) }
+  })
   // 角色被删除或不再是好友时，同步移出群成员
   void pruneGroupMembers((id) => contacts.value.some((person) => person.id === id) && isFriend(id))
 }
@@ -1970,6 +2013,7 @@ function onMemoriesUpdated(event) {
 onBeforeUnmount(() => clearInterval(activityStatusTimer))
 
 onMounted(async () => {
+  void loadLorebook()
   activityStatusTimer = setInterval(() => {
     checkActivityStatuses()
     checkFriendRequests()
@@ -2050,7 +2094,7 @@ onMounted(async () => {
               const savedEntries = savedChatConfig.preset.entries.filter((entry) => entry && typeof entry.id === 'string')
               const savedOrder = new Map(savedEntries.map((entry, index) => [entry.id, index]))
               const savedById = new Map(savedEntries.map((entry) => [entry.id, entry]))
-              const removedDefaultEntryIds = new Set(['alive-plus-plus', 'natural-message-segmentation', 'internet-meme-lore', 'chat-natural-flow', 'everyday-natural-replies', 'anti-vintage-ceo-romance', 'grounded-attractive-voice', 'modern-conversational-voice', 'distinctive-character-voice', 'anti-cliche-character-expression', 'behavior-guidelines', 'expression-freedom-protection'])
+              const removedDefaultEntryIds = new Set(['alive-plus-plus', 'natural-message-segmentation', 'internet-meme-lore', 'chat-natural-flow', 'everyday-natural-replies', 'anti-vintage-ceo-romance', 'grounded-attractive-voice', 'modern-conversational-voice', 'distinctive-character-voice', 'anti-cliche-character-expression', 'behavior-guidelines', 'expression-freedom-protection', 'life-texture-grounding', 'life-reply-rhythm', 'life-conversational-habits', 'life-attention-and-memory', 'life-emotional-realism', 'life-initiative-and-pacing', 'life-anti-ooc-guard', 'character-craft-guide'])
               const customEntries = savedEntries.filter((entry) => !defaultChatPreset.entries.some((defaultEntry) => defaultEntry.id === entry.id) && !removedDefaultEntryIds.has(entry.id) && !['scenario', 'continuity', 'style', 'format', 'example', 'after'].includes(entry.id))
               return [
                 ...cloneConfig(defaultChatPreset.entries).map((entry) => {
@@ -2819,8 +2863,10 @@ function startPresetDrag(index, event) {
   presetDragPoint = { x: event.clientX, y: event.clientY }
   handle.setPointerCapture?.(event.pointerId)
   presetHoldTimer = setTimeout(() => {
+    trace('drag-start', { i: index })
     draggingPresetIndex.value = index
-    presetDragGhost.value = { entry: { ...presetDraft.value.entries[index] }, left: rect.left, top: rect.top, width: rect.width, height: rect.height, offsetX: presetDragPoint.x - rect.left, offsetY: presetDragPoint.y - rect.top }
+    presetDragTarget.value = index
+    presetDragGhost.value ={ entry: { ...presetDraft.value.entries[index] }, left: rect.left, top: rect.top, width: rect.width, height: rect.height, offsetX: presetDragPoint.x - rect.left, offsetY: presetDragPoint.y - rect.top }
     if (navigator.vibrate) navigator.vibrate(12)
     presetDragFrame = requestAnimationFrame(updatePresetDrag)
   }, 320)
@@ -2842,23 +2888,54 @@ function updatePresetDrag() {
   const edge = 64
   if (presetDragPoint.y < bounds.top + edge) scroll.scrollTop -= Math.min(14, Math.max(0, (bounds.top + edge - presetDragPoint.y) / 4))
   else if (presetDragPoint.y > bounds.bottom - edge) scroll.scrollTop += Math.min(14, Math.max(0, (presetDragPoint.y - bounds.bottom + edge) / 4))
+  // 卡片节点在拖动中保持原位，用原始索引取相邻卡片的位置，手指越过中线才换位
   const cards = [...scroll.querySelectorAll('.preset-setting-card')]
-  const current = draggingPresetIndex.value
-  const next = cards[current + 1]?.getBoundingClientRect()
-  const previous = cards[current - 1]?.getBoundingClientRect()
-  if (next && presetDragPoint.y > next.top + next.height / 2) movePresetDrag(current + 1)
-  else if (previous && presetDragPoint.y < previous.top + previous.height / 2) movePresetDrag(current - 1)
+  const target = presetDragTarget.value
+  const below = cards[target + 1]?.getBoundingClientRect()
+  const above = cards[target - 1]?.getBoundingClientRect()
+  if (below && presetDragPoint.y > below.top + below.height / 2) movePresetDrag(target + 1)
+  else if (above && presetDragPoint.y < above.top + above.height / 2) movePresetDrag(target - 1)
   presetDragFrame = requestAnimationFrame(updatePresetDrag)
 }
 
+// 拖动中不改动数组，避免列表节点被重排导致手柄丢失指针捕获。只记录目标位置，松手时再一次性调整顺序。
+// 拖动中的视觉让位：被拖卡片不动（由 ghost 跟随），中间被跨过的卡片平移一格，不改 DOM 顺序。
+function presetShiftStyle(index) {
+  const from = draggingPresetIndex.value
+  const to = presetDragTarget.value
+  if (from < 0 || to < 0 || from === to || index === from) return null
+  const slot = presetRowHeight()
+  if (from < to && index > from && index <= to) return { transform: `translateY(${-slot}px)` }
+  if (from > to && index >= to && index < from) return { transform: `translateY(${slot}px)` }
+  return null
+}
+// 卡片高度加上下间距，作为平移的一格距离
+function presetRowHeight() {
+  const card = document.querySelector('.preset-setting-card')
+  if (!card) return 68
+  const style = getComputedStyle(card)
+  return card.offsetHeight + parseFloat(style.marginBottom || '0')
+}
+
 function movePresetDrag(index) {
-  if (draggingPresetIndex.value < 0 || draggingPresetIndex.value === index) return
-  const [entry] = presetDraft.value.entries.splice(draggingPresetIndex.value, 1)
-  presetDraft.value.entries.splice(index, 0, entry)
-  draggingPresetIndex.value = index
+  if (presetDragTarget.value < 0 || presetDragTarget.value === index) return
+  if (index < 0 || index >= presetDraft.value.entries.length) return
+  presetDragTarget.value = index
+  trace('drag-move', { to: index })
 }
 
 function stopPresetDrag() {
+  if (draggingPresetIndex.value >= 0) {
+    // 松手时才把被拖条目一次性移动到目标位置
+    const from = draggingPresetIndex.value
+    const to = presetDragTarget.value
+    if (to >= 0 && to !== from && presetDraft.value) {
+      const [entry] = presetDraft.value.entries.splice(from, 1)
+      presetDraft.value.entries.splice(to, 0, entry)
+    }
+    trace('drag-end', { from, to })
+  }
+  presetDragTarget.value = -1
   clearTimeout(presetHoldTimer)
   cancelAnimationFrame(presetDragFrame)
   const source = presetDragSource
@@ -2867,6 +2944,17 @@ function stopPresetDrag() {
   presetDragGhost.value = null
   draggingPresetIndex.value = -1
   if (source?.handle.hasPointerCapture?.(source.pointerId)) source.handle.releasePointerCapture(source.pointerId)
+}
+// 拖动中，手柄因为列表重排（卡片被移动）而失去指针捕获时，不结束拖动，而是重新捕获指针。
+// 只有没有拖动在进行时，失去捕获才结束拖动状态。
+function onPresetHandleLostCapture(event) {
+  trace('lost-capture', { dragging: draggingPresetIndex.value })
+  if (draggingPresetIndex.value >= 0 && presetDragSource && event.pointerId === presetDragSource.pointerId) {
+    const handle = presetDragSource.handle
+    if (handle?.isConnected) handle.setPointerCapture?.(presetDragSource.pointerId)
+    return
+  }
+  stopPresetDrag()
 }
 onBeforeUnmount(stopPresetDrag)
 watch(presetDraft, (draft) => { if (!draft) { stopPresetDrag(); closePresetDetail() } })
@@ -3073,7 +3161,7 @@ function dismissFriendRequest(request) {
           <div class="moments-profile"><button class="moments-avatar" type="button" aria-label="更换我的头像" @click.stop="avatarDialogOpen = true"><img v-if="activeUserAvatar" :src="activeUserAvatar" alt="我的头像"/><span v-else>{{ (activeUserPersona.name || '我').slice(0,1) }}</span></button><strong>{{ activeUserPersona.name || '我' }}</strong></div>
         </div>
         <div class="moments-feed">
-          <article v-for="post in momentsPosts" :key="post.id" class="moment-post"><div class="moment-avatar"><img v-if="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" :src="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" alt=""/><span v-else>{{ (post.authorName || activeUserPersona.name || '我').slice(0,1) }}</span></div><div class="moment-body"><strong>{{ post.authorName || activeUserPersona.name || '我' }}</strong><p v-if="post.text">{{ post.text }}</p><p v-if="post.translationVisible && post.translation" class="moment-translation">{{ post.translation }}</p><button v-if="post.authorType === 'character' && post.text" class="moment-translate-button" type="button" :disabled="post.translationLoading" @click="toggleMomentTranslation(post)">{{ post.translationLoading ? '翻译中…' : post.translationVisible ? '收起翻译' : '翻译' }}</button><img v-if="post.image" class="moment-image" :src="post.image" alt="动态图片"/><small>{{ post.time }}</small><div v-if="post.authorType === 'user' || post.authorType === 'character'" class="moment-manage"><button v-if="post.authorType === 'user'" type="button" class="moment-edit-button" @click="editMoment(post)">编辑</button><button type="button" class="moment-trash-button" aria-label="删除动态" title="删除动态" @click="deleteMoment(post)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div><div class="moment-actions"><span class="moment-like-group"><button class="moment-like-button" type="button" :disabled="!momentsSettings.enabled" aria-label="点赞" @click="toggleMomentLike(post)"><span class="moment-heart" :class="{ liked: post.likes?.some((like) => like.id === (chatConfig.profileId || 'user')) }">♥</span></button></span><button class="moment-comment-button" type="button" @click="momentsReplyTargets[post.id] = ''; momentsCommentDialogPostId = post.id">评论</button></div><div v-if="post.likes?.length" class="moment-likes-inline"><span class="moment-likes-heart" aria-hidden="true">♥</span><span>{{ post.likes.map(likerName).join('，') }}</span></div><div v-if="post.comments?.length" class="moment-comments"><div v-for="comment in post.comments" :key="comment.id" class="moment-comment" :class="{ 'moment-comment-reply': comment.replyTo }" role="button" tabindex="0" :aria-label="`回复${comment.authorName || '访客'}的评论`" @click="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.enter.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.space.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id"><span class="moment-comment-avatar"><img v-if="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" :src="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" alt=""/><span v-else>{{ (comment.authorName || '友').slice(0,1) }}</span></span><span class="moment-comment-copy"><strong>{{ comment.authorName || '访客' }}</strong><span><template v-if="comment.replyTo">回复 {{ post.comments.find((item) => item.id === comment.replyTo)?.authorName || '评论' }}：</template>{{ comment.text }}</span><span v-if="comment.translationVisible && comment.translation" class="moment-translation">{{ comment.translation }}</span><button v-if="comment.authorType === 'character' && comment.text" class="moment-translate-button" type="button" :disabled="comment.translationLoading" @click.stop="toggleMomentTranslation(comment)">{{ comment.translationLoading ? '翻译中…' : comment.translationVisible ? '收起翻译' : '翻译' }}</button></span></div></div></div></article>
+          <article v-for="post in momentsPosts" :key="post.id" class="moment-post"><div class="moment-avatar"><img v-if="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" :src="momentAuthorAvatar(post.authorType, post.authorId, post.authorAvatar)" alt=""/><span v-else>{{ (post.authorName || activeUserPersona.name || '我').slice(0,1) }}</span></div><div class="moment-body"><strong>{{ post.authorName || activeUserPersona.name || '我' }}</strong><p v-if="post.text">{{ post.text }}</p><p v-if="post.translationVisible && post.translation" class="moment-translation">{{ post.translation }}</p><button v-if="post.authorType === 'character' && post.text" class="moment-translate-button moment-translate-icon" type="button" :aria-label="post.translationLoading ? '翻译中' : post.translationVisible ? '收起翻译' : '翻译'" :title="post.translationLoading ? '翻译中' : post.translationVisible ? '收起翻译' : '翻译'" :disabled="post.translationLoading" @click="toggleMomentTranslation(post)"><Languages :size="15" :stroke-width="1.8" :class="{ 'icon-spin': post.translationLoading }" /></button><img v-if="post.image" class="moment-image" :src="post.image" alt="动态图片"/><small>{{ post.time }}</small><div v-if="post.authorType === 'user' || post.authorType === 'character'" class="moment-manage"><button v-if="post.authorType === 'user'" type="button" class="moment-edit-button" @click="editMoment(post)">编辑</button><button type="button" class="moment-trash-button" aria-label="删除动态" title="删除动态" @click="deleteMoment(post)"><Trash2 :size="16" :stroke-width="1.8" /></button></div><div class="moment-actions"><span class="moment-like-group"><button class="moment-like-button" type="button" :disabled="!momentsSettings.enabled" aria-label="点赞" @click="toggleMomentLike(post)"><Heart class="moment-heart" :class="{ liked: post.likes?.some((like) => like.id === (chatConfig.profileId || 'user')) }" :size="17" :stroke-width="1.8" :fill="post.likes?.some((like) => like.id === (chatConfig.profileId || 'user')) ? 'currentColor' : 'none'" /></button></span><button class="moment-comment-button" type="button" aria-label="评论" title="评论" @click="momentsReplyTargets[post.id] = ''; momentsCommentDialogPostId = post.id"><MessageCircle :size="17" :stroke-width="1.8" /></button></div><div v-if="post.likes?.length" class="moment-likes-inline"><Heart class="moment-likes-heart" aria-hidden="true" :size="13" :stroke-width="1.8" fill="currentColor" /><span>{{ post.likes.map(likerName).join('，') }}</span></div><div v-if="post.comments?.length" class="moment-comments"><div v-for="comment in post.comments" :key="comment.id" class="moment-comment" :class="{ 'moment-comment-reply': comment.replyTo }" role="button" tabindex="0" :aria-label="`回复${comment.authorName || '访客'}的评论`" @click="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.enter.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id" @keydown.space.prevent="momentsReplyTargets[post.id] = comment.id; momentsCommentDialogPostId = post.id"><span class="moment-comment-avatar"><img v-if="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" :src="momentAuthorAvatar(comment.authorType, comment.authorId, comment.authorAvatar)" alt=""/><span v-else>{{ (comment.authorName || '友').slice(0,1) }}</span></span><span class="moment-comment-copy"><strong>{{ comment.authorName || '访客' }}</strong><span><template v-if="comment.replyTo">回复 {{ post.comments.find((item) => item.id === comment.replyTo)?.authorName || '评论' }}：</template>{{ comment.text }}</span><span v-if="comment.translationVisible && comment.translation" class="moment-translation">{{ comment.translation }}</span><button v-if="comment.authorType === 'character' && comment.text" class="moment-translate-button moment-translate-icon" type="button" :aria-label="comment.translationLoading ? '翻译中' : comment.translationVisible ? '收起翻译' : '翻译'" :title="comment.translationLoading ? '翻译中' : comment.translationVisible ? '收起翻译' : '翻译'" :disabled="comment.translationLoading" @click.stop="toggleMomentTranslation(comment)"><Languages :size="13" :stroke-width="1.8" :class="{ 'icon-spin': comment.translationLoading }" /></button></span></div></div></div></article>
           <p v-if="!momentsPosts.length" class="moments-empty">记录生活里的小事，让此刻留有回响。</p>
         </div>
         <div v-if="momentsCommentDialogPostId && momentsSettings.enabled" class="moment-comment-dialog-backdrop" @click.self="momentsCommentDialogPostId = ''"><section class="moment-comment-dialog" role="dialog" aria-modal="true" aria-label="写评论"><header><strong>{{ momentsReplyTargets[momentsCommentDialogPostId] ? '回复评论' : '写评论' }}</strong><button type="button" aria-label="关闭" @click="momentsCommentDialogPostId = ''">×</button></header><form class="moment-comment-dialog-form" @submit.prevent="addMomentComment(momentsPosts.find((post) => post.id === momentsCommentDialogPostId), momentsReplyTargets[momentsCommentDialogPostId] || null)"><textarea v-model="momentsCommentDrafts[`${momentsCommentDialogPostId}:${momentsReplyTargets[momentsCommentDialogPostId] || ''}`]" maxlength="1000" autofocus :placeholder="momentsReplyTargets[momentsCommentDialogPostId] ? '回复这条评论…' : '写下你的评论…'"></textarea><button type="submit" :disabled="!momentsCommentDrafts[`${momentsCommentDialogPostId}:${momentsReplyTargets[momentsCommentDialogPostId] || ''}`]?.trim()">发送</button></form></section></div>
@@ -3239,6 +3327,10 @@ function dismissFriendRequest(request) {
             <span class="chat-setting-icon image-quality-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.4 8.2 21 5l-3.2 6.6L24 14l-7.2 1.2L19 22l-7-3-7 3 2.2-6.8L0 14l6.2-2.4L3 5l6.6 3.2L12 2Z" transform="translate(2 1) scale(.83)"/></svg></span>
             <div class="chat-setting-copy"><strong>图片传输画质</strong><small>{{ selectedImageQuality()?.label }} · {{ selectedImageQuality()?.tokens }} tokens/张</small></div>
           </section>
+          <section class="chat-setting-card lorebook-setting-card" role="button" tabindex="0" @click="lorebookPickerOpen = true" @keydown.enter="lorebookPickerOpen = true" @keydown.space.prevent="lorebookPickerOpen = true">
+            <span class="chat-setting-icon lorebook-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2Zm0 0A2 2 0 0 0 6 21h13v-2"/></svg></span>
+            <div class="chat-setting-copy"><strong>世界书</strong><small>{{ lorebookSummary() }}</small></div>
+          </section>
           </div>
           <div class="chat-settings-group-title"><h3>回复展示</h3></div>
           <div class="chat-settings-group reply-display-group">
@@ -3344,7 +3436,20 @@ function dismissFriendRequest(request) {
       <div v-if="documentPreview" class="document-viewer-overlay" role="dialog" aria-modal="true" aria-label="文档查看器" @click.self="documentPreview = null"><section class="document-viewer"><header class="document-viewer-header"><button type="button" aria-label="关闭文档" @click="documentPreview = null">‹</button><span>文档预览</span><i></i></header><div class="document-toolbar"><span>W</span><strong>{{ documentPreview.fileName || '角色文档.txt' }}</strong><button type="button" @click="copyDocument">复制</button><button type="button" @click="downloadDocument">下载</button></div><article class="document-page"><h1>{{ documentPreview.fileName || '文档' }}</h1><pre>{{ documentPreview.content }}</pre></article></section></div>
       <div v-if="imagePreview" class="acrylic-overlay image-preview-overlay" role="dialog" aria-modal="true" aria-label="图片预览" @click.self="imagePreview = null"><button type="button" class="image-preview-close" aria-label="关闭图片预览" @click="imagePreview = null">×</button><div class="image-preview-dialog"><img :src="imagePreview" alt="图片预览" /></div></div>
     
-    <div v-if="systemInstructionDialog" class="system-instruction-overlay" role="presentation" @click.self="systemInstructionDialog = false"><section class="system-instruction-card" role="dialog" aria-modal="true" aria-labelledby="system-instruction-title"><div class="system-instruction-eyebrow">CHAT · PERSONALIZE</div><header><div><h2 id="system-instruction-title">调整回复方向</h2><p>为 {{ activeChat?.name || '当前聊天' }} 添加专属指令</p></div><button type="button" aria-label="关闭" @click="systemInstructionDialog = false">×</button></header><p class="system-instruction-hint">告诉角色你希望如何表达、关注什么，或避免哪些回复倾向。角色设定与对话事实仍会优先保留。</p><textarea v-model="systemInstructionDraft" maxlength="5000" autofocus placeholder="例如：回复更简洁自然；讨论问题时先回应我的具体感受，不要急着给建议。"/><div class="system-instruction-meta"><span>仅作用于当前聊天</span><span>{{ systemInstructionDraft.length }} / 5000</span></div><footer><button type="button" class="system-instruction-clear" @click="systemInstructionDraft = ''">清空</button><span/><button type="button" @click="systemInstructionDialog = false">取消</button><button type="button" class="system-instruction-save" @click="saveSystemInstruction">发送</button></footer></section></div>
+    <div v-if="lorebookPickerOpen" class="lorebook-picker-overlay" role="presentation" @click.self="lorebookPickerOpen = false">
+      <section class="lorebook-picker" role="dialog" aria-modal="true" aria-label="绑定世界书">
+        <header><strong>绑定世界书</strong><button type="button" aria-label="关闭" @click="lorebookPickerOpen = false">×</button></header>
+        <p>勾选后，这个聊天会注入所选世界书里的条目。</p>
+        <div class="lorebook-picker-list">
+          <label v-for="book in lorebook.books" :key="book.id" class="lorebook-picker-row">
+            <span>{{ book.name }}</span>
+            <input type="checkbox" :checked="activeChat && lorebookIdsOf(activeChat.id).includes(book.id)" @change="toggleLorebookBinding(book.id)" />
+          </label>
+          <p v-if="!lorebook.books.length" class="lorebook-picker-empty">还没有世界书，请先在「世界书」应用里新建。</p>
+        </div>
+      </section>
+    </div>
+    <div v-if="systemInstructionDialog" class="system-instruction-overlay"role="presentation" @click.self="systemInstructionDialog = false"><section class="system-instruction-card" role="dialog" aria-modal="true" aria-labelledby="system-instruction-title"><div class="system-instruction-eyebrow">CHAT · PERSONALIZE</div><header><div><h2 id="system-instruction-title">调整回复方向</h2><p>为 {{ activeChat?.name || '当前聊天' }} 添加专属指令</p></div><button type="button" aria-label="关闭" @click="systemInstructionDialog = false">×</button></header><p class="system-instruction-hint">告诉角色你希望如何表达、关注什么，或避免哪些回复倾向。角色设定与对话事实仍会优先保留。</p><textarea v-model="systemInstructionDraft" maxlength="5000" autofocus placeholder="例如：回复更简洁自然；讨论问题时先回应我的具体感受，不要急着给建议。"/><div class="system-instruction-meta"><span>仅作用于当前聊天</span><span>{{ systemInstructionDraft.length }} / 5000</span></div><footer><button type="button" class="system-instruction-clear" @click="systemInstructionDraft = ''">清空</button><span/><button type="button" @click="systemInstructionDialog = false">取消</button><button type="button" class="system-instruction-save" @click="saveSystemInstruction">发送</button></footer></section></div>
     <GroupCreatePage v-if="groupCreateOpen" :friends="groupFriendOptions" @close="groupCreateOpen = false" @created="onGroupCreated" />
     <GroupSettingsPage v-if="groupSettingsOpen && activeGroup" :group="activeGroup" :members="groupMembers" :candidates="groupCandidates" @close="groupSettingsOpen = false" @patch="onGroupPatch" @leave="onGroupLeave" @delete="onGroupDelete" />
     <div v-if="forwardDialog" class="acrylic-overlay forward-overlay" @click.self="forwardDialog = null"><section class="forward-sheet" role="dialog" aria-modal="true" aria-label="转发聊天记录"><header class="forward-head"><button type="button" class="forward-back" v-if="forwardDialog.step !== 'source'" aria-label="返回上一步" @click="forwardDialog = forwardDialog.step === 'target' ? { ...forwardDialog, step: 'messages' } : { step: 'source', sourceId: '', picked: [] }">‹</button><h2>{{ forwardDialog.step === 'source' ? '选择要转发的聊天' : forwardDialog.step === 'messages' ? '选择要转发的消息' : '转发给谁' }}</h2><button type="button" class="forward-close" aria-label="关闭" @click="forwardDialog = null">×</button></header><template v-if="forwardDialog.step === 'source'"><p class="forward-hint">选择一个角色或群，挑出聊天里的几条消息，转发给另一个角色或群。</p><ul class="forward-list"><li v-for="person in forwardSourceOptions" :key="person.id"><button type="button" @click="chooseForwardSource(person.id)"><span class="forward-avatar" :style="{ background: person.color || '#dededb' }">{{ (person.name || '?').slice(0, 1) }}</span><span>{{ person.name || '未命名' }}</span></button></li></ul></template><template v-else-if="forwardDialog.step === 'messages'"><p class="forward-hint">与 {{ forwardEntityName(forwardDialog.sourceId) }} 的聊天，勾选要转发的消息（已选 {{ forwardDialog.picked.length }} 条）。</p><button v-if="forwardableMessages(forwardDialog.sourceId).length > forwardWindow.length" type="button" class="forward-more" @click="loadMoreForward">加载更早的消息</button><ul ref="forwardPickRef" class="forward-pick"><li v-for="entry in forwardWindow" :key="entry.index"><label :class="{ on: forwardDialog.picked.includes(entry.index) }"><input type="checkbox" :checked="forwardDialog.picked.includes(entry.index)" @change="togglePickForward(entry.index)" /><span class="forward-pick-who">{{ entry.message.from === 'me' ? '我' : entry.message.speaker || forwardEntityName(forwardDialog.sourceId) }}</span><span class="forward-pick-text">{{ String(entry.message.text).slice(0, 80) }}</span></label></li></ul><p v-if="!forwardWindow.length" class="forward-hint">这个角色还没有聊天记录。</p><div class="forward-actions"><button type="button" class="forward-next" :disabled="!forwardDialog.picked.length" @click="confirmForwardPicks">下一步</button></div></template><template v-else><p class="forward-hint">把已选的 {{ forwardDialog.picked.length }} 条消息转发给：</p><ul class="forward-list"><li v-for="person in forwardSourceOptions.filter((c) => c.id !== forwardDialog.sourceId)" :key="person.id"><button type="button" @click="submitForward(person.id)"><span class="forward-avatar" :style="{ background: person.color || '#dededb' }">{{ (person.name || '?').slice(0, 1) }}</span><span>{{ person.name || '未命名' }}</span></button></li></ul></template></section></div>
@@ -3464,13 +3569,13 @@ function dismissFriendRequest(request) {
               </div>
             </details>
             <div class="preset-config-section-title"><span>提示词条目 <small>{{ presetDraft.entries.length }} 项</small></span><button type="button" @click="addPresetEntry">＋ 添加</button></div>
-            <article v-for="(entry, index) in presetDraft.entries" :key="entry.id" class="preset-setting-card" :class="{ dragging: draggingPresetIndex === index, 'entry-disabled': !entry.enabled }">
+            <article v-for="(entry, index) in presetDraft.entries" :key="entry.id" class="preset-setting-card" :class="{ dragging: draggingPresetIndex === index, 'entry-disabled': !entry.enabled }" :style="presetShiftStyle(index)">
               <button class="preset-entry-summary" type="button" @click="openPresetDetail(index)">
                 <span class="preset-config-icon preset-entry-number">{{ String(index + 1).padStart(2, '0') }}</span>
                 <span class="preset-entry-copy"><strong>{{ entry.name || '未命名条目' }}</strong><small>{{ entry.content?.trim().replace(/\\s+/g, ' ') || '暂无简介' }}</small></span>
                 <span class="preset-entry-chevron">›</span>
               </button>
-              <button class="preset-entry-handle" type="button" aria-label="长按拖动排序" @pointerdown.stop="startPresetDrag(index, $event)" @pointermove="trackPresetDrag" @pointerup="stopPresetDrag" @pointercancel="stopPresetDrag" @lostpointercapture="stopPresetDrag" @contextmenu.prevent>
+              <button class="preset-entry-handle" type="button" aria-label="长按拖动排序" @pointerdown.stop="startPresetDrag(index, $event)" @pointermove="trackPresetDrag" @pointerup="stopPresetDrag" @pointercancel="stopPresetDrag" @lostpointercapture="onPresetHandleLostCapture" @contextmenu.prevent>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
               </button>
               <button class="preset-setting-toggle" type="button" role="switch" :aria-checked="entry.enabled" :aria-label="entry.enabled ? '停用条目' : '启用条目'" :class="{ on: entry.enabled }" @click="entry.enabled = !entry.enabled"><i /></button>
@@ -3891,6 +3996,16 @@ function dismissFriendRequest(request) {
 .feature-dialog footer .feature-send-button{color:#fff;background:#34c759}
 .feature-dialog footer .feature-send-button:disabled{opacity:.4;cursor:not-allowed}
 .transfer-action-note{margin:0 0 6px;color:#8e8e93;font-size:13px;text-align:center}
+.lorebook-picker-overlay{position:fixed;inset:0;z-index:140;display:grid;place-items:center;padding:20px;box-sizing:border-box;background:rgba(0,0,0,.25)}
+.lorebook-picker{width:min(100%,360px);box-sizing:border-box;padding:18px;border-radius:20px;background:#fff;box-shadow:0 14px 40px rgba(0,0,0,.18);color:#1c1c1e;font-family:-apple-system,"PingFang SC",sans-serif}
+.lorebook-picker header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.lorebook-picker header strong{font-size:17px;font-weight:600}
+.lorebook-picker header button{width:30px;height:30px;border:0;border-radius:50%;background:#f2f2f7;color:#8e8e93;font-size:20px;line-height:1;cursor:pointer}
+.lorebook-picker>p{margin:0 0 12px;font-size:13px;line-height:1.5;color:#8e8e93}
+.lorebook-picker-list{display:flex;flex-direction:column;gap:6px}
+.lorebook-picker-row{display:flex;align-items:center;justify-content:space-between;min-height:46px;padding:0 14px;border-radius:14px;background:#f7f7f9;font-size:15px;cursor:pointer}
+.lorebook-picker-row input{width:20px;height:20px;margin:0;accent-color:#34c759}
+.lorebook-picker-empty{margin:0;padding:10px 4px;font-size:13px;color:#8e8e93}
 .system-instruction-overlay{position:fixed;inset:0;z-index:140;display:grid;place-items:center;padding:20px;box-sizing:border-box;background:rgba(0,0,0,.25)}
 .system-instruction-card{width:min(360px,100%);max-height:min(640px,calc(100dvh - 40px));overflow:auto}
 .system-instruction-eyebrow{display:none}
@@ -3938,7 +4053,7 @@ function dismissFriendRequest(request) {
 :deep(.voice-description){display:block;margin-top:2px;color:#aeaeb2;font-size:10px}
 
 /* 语音气泡：与文字气泡同样的配色与圆角。对方白底深字，我方蓝底白字；播放键与转写随之变色 */
-:deep(.voice-bubble){width:min(220px,100%);max-width:min(82%,360px);box-sizing:border-box;display:flex;flex-direction:column;gap:4px;padding:10px 13px;border-radius:8px;background:#fff;color:#17181a;box-shadow:none}
+:deep(.voice-bubble){width:auto;min-width:min(260px,100%);max-width:min(82%,480px);box-sizing:border-box;display:flex;flex-direction:column;gap:4px;padding:10px 13px;border-radius:8px;background:#fff;color:#17181a;box-shadow:none}
 :deep(.message-row.me .voice-bubble){background:#0099ff;color:#fff}
 :deep(.message-row.them .voice-bubble){background:#fff;color:#17181a}
 :deep(.voice-bubble .voice-message-card){background:transparent!important;box-shadow:none!important;padding:0;min-height:0;border-radius:0;color:inherit}
@@ -3995,7 +4110,7 @@ function dismissFriendRequest(request) {
 /* 朋友圈模板位于多个 scoped style 块中，深层组件选择器确保动态区样式实际命中 DOM。 */
 :deep(.moments-page){color:#343638}
 :deep(.moment-manage){display:flex;gap:10px;margin-top:5px}.moment-manage button{padding:2px 0;border:0;color:#899096;background:transparent;font:inherit;font-size:11px;cursor:pointer}
-:deep(.moment-post){display:flex;align-items:flex-start;gap:12px;margin:0 12px 12px;padding:16px;border:0;border-radius:18px;background:#ffffff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+:deep(.moment-post){display:flex;align-items:flex-start;gap:12px;margin:0 12px 12px;padding:16px 4px;border:0;border-radius:18px;background:transparent;box-shadow:none}
 :deep(.moment-avatar){width:40px;height:40px;flex:none;display:grid;place-items:center;overflow:hidden;border:0;border-radius:12px;color:#636366;background:#e5e5ea;font-size:15px;font-weight:600}
 :deep(.moment-avatar img){width:100%;height:100%;object-fit:cover}
 :deep(.moment-body){min-width:0;flex:1;color:#1c1c1e}
@@ -4051,7 +4166,7 @@ function dismissFriendRequest(request) {
 :deep(.moment-comment-avatar){width:30px;height:30px;position:relative;flex:none;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(255,255,255,.8);border-radius:50%;color:#65806b;background:linear-gradient(145deg,#f4faf3,#e5efe5);font-size:12px;font-weight:600;box-shadow:0 2px 7px rgba(81,111,86,.1)}
 :deep(.moment-comment-avatar img){width:100%;height:100%;position:absolute;inset:0;object-fit:cover}
 :deep(.moment-comment-copy){min-width:0;flex:1;display:flex;flex-direction:column;gap:3px;padding-top:1px}
-:deep(.moment-comment-copy>strong){color:#608069;font-size:11px;font-weight:650}
+:deep(.moment-comment-copy>strong){color:#3c3c43;font-size:11px;font-weight:650}
 :deep(.moment-comment-copy>span){color:#56625a;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
 :deep(.moment-translate-button){display:inline-flex;margin:4px 0 0;padding:0;border:0;color:#8a929a;background:transparent;font:inherit;font-size:10px;cursor:pointer}
 :deep(.moment-translate-button:disabled){opacity:.55;cursor:default}
@@ -4102,7 +4217,7 @@ function dismissFriendRequest(request) {
 .moments-topbar{position:absolute;top:0;left:0;right:0;z-index:4;background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}.moments-topbar .back-button,.moments-topbar .round-action{color:#343638;background:transparent;box-shadow:none}.moments-topbar{height:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;padding-top:env(safe-area-inset-top)}
 .chat-content>.welcome{width:100%;text-align:left}
 .chat-content>.welcome .chat-list-back-button{align-self:flex-start}
-.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control>small{display:block;margin-top:8px;color:#999;font-size:11px}.moments-page{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;background:rgb(var(--moments-surface-rgb)/.96);padding-top:0;padding-bottom:calc(env(safe-area-inset-bottom) + 72px);box-sizing:border-box}.moments-cover{height:min(48dvh,390px);min-height:280px;position:relative;margin-top:0;padding-top:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;background:linear-gradient(to bottom,transparent 66%,rgb(var(--moments-surface-rgb)/.10) 78%,rgb(var(--moments-surface-rgb)/.46) 89%,rgb(var(--moments-surface-rgb)/.88) 97%,rgb(var(--moments-surface-rgb)) 100%),var(--moments-cover-image,linear-gradient(145deg,#dedbd5,#b9b6b0));background-position:center;background-size:cover;cursor:pointer}.moments-cover-hint{position:absolute;right:18px;bottom:90px;color:#fff;font-size:12px;text-shadow:0 1px 8px #0008}.moments-profile{position:absolute;right:20px;bottom:-24px;display:flex;align-items:center;gap:12px;color:#fff;text-shadow:0 1px 5px #0006}.moments-profile strong{font-size:16px}.moments-avatar,.moment-avatar{width:68px;height:68px;display:grid;place-items:center;overflow:hidden;border:3px solid #fff;border-radius:50%;color:#777;background:#e8e5e0;font-size:20px}.moments-avatar img{width:100%;height:100%;object-fit:cover}.moments-feed{padding:40px 18px 24px}.moment-avatar{width:42px;height:42px;flex:none;border:0;font-size:14px}.moment-body{min-width:0;flex:1}.moment-body p{margin:7px 0;color:#333;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.moment-body small{display:block;margin-top:9px;color:#aaa;font-size:11px}.moment-image{display:block;max-width:100%;max-height:260px;margin-top:8px;border-radius:5px;object-fit:cover}.moments-empty{padding:20px 0;color:#aaa;text-align:center;font-size:12px}.moment-composer-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:#0005;backdrop-filter:blur(6px)}.moment-composer{width:min(100%,480px);max-height:calc(100dvh - 40px);overflow:auto;padding:17px;border-radius:20px;background:#fff}.moment-composer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.moment-composer header button{border:0;color:#777;background:transparent}.moment-composer .moment-publish{padding:7px 14px;border-radius:16px;color:#fff;background:#738b78}.moment-composer .moment-publish:disabled{opacity:.45}.moment-composer textarea{width:100%;min-height:130px;resize:vertical;box-sizing:border-box;border:0;outline:0;font:inherit;font-size:15px}.moment-composer-tools{display:flex;align-items:flex-end;gap:10px;margin:10px 0 16px}.moment-add-image{width:76px;height:76px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:#85888a;background:#ededed;cursor:pointer}.moment-add-image svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.moment-tool-hint{padding-bottom:4px;color:#aaa;font-size:11px}.moment-image-preview{width:76px;height:76px;position:relative}.moment-image-preview img{width:100%;height:100%;border-radius:5px;object-fit:cover}.moment-image-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;color:white;background:#555;font-size:17px}.moment-option{min-height:48px;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid #f0f0ef;color:#454746;background:transparent;text-align:left;font:inherit;font-size:13px;cursor:pointer}.moment-option-icon{width:22px;flex:none;color:#858b86;text-align:center;font-size:17px}.moment-option>span:nth-child(2){flex:none}.moment-option small{min-width:0;flex:1;overflow:hidden;color:#999;text-align:right;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.moment-option b{flex:none;color:#b6b8b6;font-size:19px;font-weight:400}.moment-option:active{background:#f8f9f7}.moment-friend-avatar{flex:none;overflow:hidden;font-size:14px}.moment-friend-avatar img{width:100%;height:100%;object-fit:cover}.moment-friend-avatar>span{display:grid;width:100%;height:100%;place-items:center}.moment-composer>input[type=file],.moments-page>input[type=file]{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important}.moment-subdialog-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:18px;background:#0005;backdrop-filter:blur(6px)}.moment-subdialog{width:min(100%,420px);max-height:min(80dvh,620px);overflow:auto;padding:16px;border-radius:18px;background:#fff;box-shadow:0 16px 50px #0002}.moments-page .moment-composer-backdrop,.moments-page .moment-subdialog-backdrop{background:rgba(244,250,245,.72);backdrop-filter:none;-webkit-backdrop-filter:none}.moments-page .moment-composer,.moments-page .moment-subdialog{border:0;border-radius:24px;background:#fff;box-shadow:0 12px 36px rgba(75,115,84,.12)}.moments-page .moment-composer header,.moments-page .moment-subdialog header{margin-bottom:16px}.moments-page .moment-composer header button,.moments-page .moment-subdialog header button{min-height:36px;padding:0 12px;border:0;border-radius:18px;color:#568364;background:#eaf5ec;font:inherit;font-size:13px}.moments-page .moment-composer .moment-publish,.moments-page .moment-subdialog header button:last-child{color:#477b56;background:#dff1e3;font-weight:600}.moments-page .moment-composer .moment-publish:disabled{color:#7d9d84;background:#edf5ee}.moments-page .moment-choice{color:#46554a}.moments-page .moment-choice i{color:#5b9669}.moments-page .moment-subdialog{width:min(calc(100% - 32px),446px);padding:17px;box-sizing:border-box}.moments-page .moment-option,.moments-page .moment-choice{width:100%;box-sizing:border-box;border:0;border-radius:0;background:transparent}.moments-page .moment-option{min-height:48px;margin-top:0;padding:0}.moments-page .moment-choice{min-height:48px;margin:0;padding:0}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:transparent}
+.moments-interval-control{padding:14px 16px 12px;border-bottom:1px solid rgba(0,0,0,.055);color:#5d625f}.moments-interval-control.disabled{opacity:.48}.moments-interval-heading,.moments-interval-custom{display:flex;align-items:center;justify-content:space-between;gap:14px}.moments-interval-heading{font-size:13px}.moments-interval-heading strong{color:#686e6a;font-size:13px;font-weight:600}.moments-interval-slider{width:100%;height:24px;display:block;margin:9px 0 3px;accent-color:#b9bfbb;cursor:pointer}.moments-interval-slider:disabled{cursor:not-allowed}.moments-interval-custom{font-size:12px}.moments-interval-custom input{width:84px;padding:7px 9px;border:1px solid #e3e5e3;border-radius:9px;background:rgba(255,255,255,.7);color:#555;text-align:right;font:inherit}.moments-interval-custom input:focus{outline:1px solid #c5cbc7}.moments-interval-control>small{display:block;margin-top:8px;color:#999;font-size:11px}.moments-page{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;background:rgb(var(--moments-surface-rgb)/.96);padding-top:0;padding-bottom:calc(env(safe-area-inset-bottom) + 72px);box-sizing:border-box}.moments-cover{height:min(48dvh,390px);min-height:280px;position:relative;margin-top:0;padding-top:calc(env(safe-area-inset-top) + 54px);box-sizing:border-box;background:linear-gradient(to bottom,transparent 66%,rgb(var(--moments-surface-rgb)/.10) 78%,rgb(var(--moments-surface-rgb)/.46) 89%,rgb(var(--moments-surface-rgb)/.88) 97%,rgb(var(--moments-surface-rgb)) 100%),var(--moments-cover-image,linear-gradient(145deg,#dedbd5,#b9b6b0));background-position:center;background-size:cover;cursor:pointer}.moments-cover-hint{position:absolute;right:18px;bottom:90px;color:#fff;font-size:12px;text-shadow:0 1px 8px #0008}.moments-profile{position:absolute;right:20px;bottom:-24px;display:flex;align-items:center;gap:12px;color:#fff;text-shadow:0 1px 5px #0006}.moments-profile strong{font-size:16px}.moments-avatar,.moment-avatar{width:68px;height:68px;display:grid;place-items:center;overflow:hidden;border:3px solid #fff;border-radius:50%;color:#777;background:#e8e5e0;font-size:20px}.moments-avatar img{width:100%;height:100%;object-fit:cover}.moments-feed{padding:40px 8px 24px}.moment-avatar{width:42px;height:42px;flex:none;border:0;font-size:14px}.moment-body{min-width:0;flex:1}.moment-body p{margin:7px 0;color:#333;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.moment-body small{display:block;margin-top:9px;color:#aaa;font-size:11px}.moment-image{display:block;max-width:100%;max-height:260px;margin-top:8px;border-radius:5px;object-fit:cover}.moments-empty{padding:20px 0;color:#aaa;text-align:center;font-size:12px}.moment-composer-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:#0005;backdrop-filter:blur(6px)}.moment-composer{width:min(100%,480px);max-height:calc(100dvh - 40px);overflow:auto;padding:17px;border-radius:20px;background:#fff}.moment-composer header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.moment-composer header button{border:0;color:#777;background:transparent}.moment-composer .moment-publish{padding:7px 14px;border-radius:16px;color:#fff;background:#738b78}.moment-composer .moment-publish:disabled{opacity:.45}.moment-composer textarea{width:100%;min-height:130px;resize:vertical;box-sizing:border-box;border:0;outline:0;font:inherit;font-size:15px}.moment-composer-tools{display:flex;align-items:flex-end;gap:10px;margin:10px 0 16px}.moment-add-image{width:76px;height:76px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;color:#85888a;background:#ededed;cursor:pointer}.moment-add-image svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.moment-tool-hint{padding-bottom:4px;color:#aaa;font-size:11px}.moment-image-preview{width:76px;height:76px;position:relative}.moment-image-preview img{width:100%;height:100%;border-radius:5px;object-fit:cover}.moment-image-preview button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border:0;border-radius:50%;color:white;background:#555;font-size:17px}.moment-option{min-height:48px;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid #f0f0ef;color:#454746;background:transparent;text-align:left;font:inherit;font-size:13px;cursor:pointer}.moment-option-icon{width:22px;flex:none;color:#858b86;text-align:center;font-size:17px}.moment-option>span:nth-child(2){flex:none}.moment-option small{min-width:0;flex:1;overflow:hidden;color:#999;text-align:right;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.moment-option b{flex:none;color:#b6b8b6;font-size:19px;font-weight:400}.moment-option:active{background:#f8f9f7}.moment-friend-avatar{flex:none;overflow:hidden;font-size:14px}.moment-friend-avatar img{width:100%;height:100%;object-fit:cover}.moment-friend-avatar>span{display:grid;width:100%;height:100%;place-items:center}.moment-composer>input[type=file],.moments-page>input[type=file]{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;opacity:0!important;pointer-events:none!important;appearance:none!important;-webkit-appearance:none!important}.moment-subdialog-backdrop{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:18px;background:#0005;backdrop-filter:blur(6px)}.moment-subdialog{width:min(100%,420px);max-height:min(80dvh,620px);overflow:auto;padding:16px;border-radius:18px;background:#fff;box-shadow:0 16px 50px #0002}.moments-page .moment-composer-backdrop,.moments-page .moment-subdialog-backdrop{background:rgba(244,250,245,.72);backdrop-filter:none;-webkit-backdrop-filter:none}.moments-page .moment-composer,.moments-page .moment-subdialog{border:0;border-radius:24px;background:#fff;box-shadow:0 12px 36px rgba(75,115,84,.12)}.moments-page .moment-composer header,.moments-page .moment-subdialog header{margin-bottom:16px}.moments-page .moment-composer header button,.moments-page .moment-subdialog header button{min-height:36px;padding:0 12px;border:0;border-radius:18px;color:#568364;background:#eaf5ec;font:inherit;font-size:13px}.moments-page .moment-composer .moment-publish,.moments-page .moment-subdialog header button:last-child{color:#477b56;background:#dff1e3;font-weight:600}.moments-page .moment-composer .moment-publish:disabled{color:#7d9d84;background:#edf5ee}.moments-page .moment-choice{color:#46554a}.moments-page .moment-choice i{color:#5b9669}.moments-page .moment-subdialog{width:min(calc(100% - 32px),446px);padding:17px;box-sizing:border-box}.moments-page .moment-option,.moments-page .moment-choice{width:100%;box-sizing:border-box;border:0;border-radius:0;background:transparent}.moments-page .moment-option{min-height:48px;margin-top:0;padding:0}.moments-page .moment-choice{min-height:48px;margin:0;padding:0}.moments-page .moment-option:active,.moments-page .moment-choice:active{background:transparent}
 .moments-topbar .topbar-spacer{flex:1}
 .moment-generation-error-backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}.moment-generation-error-card{width:min(100%,480px);padding:26px 24px 22px;border-radius:24px;box-shadow:0 18px 55px rgba(32,55,43,.14)}.moment-generation-error-card header{margin-bottom:16px}.moment-generation-error-card header strong{font-size:19px;color:#343a36}.moment-generation-error-card p{margin:0;color:#626a65;font-size:15px;line-height:1.65;overflow-wrap:anywhere}.moment-generation-error-confirm{width:100%;min-height:46px;margin-top:22px;border:0;border-radius:14px;color:#fff;background:#648b70;font:inherit;font-size:15px;font-weight:600;cursor:pointer}.moment-generation-error-confirm:active{background:#52775e}.moment-choice{width:100%;min-height:48px;display:flex;align-items:center;justify-content:space-between;border:0;border-bottom:1px solid #eee;color:#444;background:#fff;text-align:left;font:inherit;font-size:14px}.moment-choice i{color:#718879;font-style:normal}.moment-picker-tip{color:#999;font-size:12px}.moment-friend-option{min-height:64px;display:flex;align-items:center;gap:14px;padding:8px 4px;border-bottom:0;font-size:14px}.moments-page .moment-friend-option{min-height:68px;gap:15px;padding:10px 6px;border:0}.moments-page .moment-friend-avatar{width:42px;height:42px;flex:none;border:2px solid #f2f7f1;box-shadow:0 2px 8px rgba(80,115,86,.1)}.moments-page .moment-friend-option input{width:18px;height:18px;margin:0 4px 0 0;accent-color:#78917e}.moments-page .moment-friend-option>span:last-child{line-height:1.5}.moment-friend-option input{accent-color:#78917e}.moment-friend-avatar{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;color:#68776c;background:#edf0eb}.moment-location-dialog{width:min(100%,500px)}.moment-map-preview{height:190px;position:relative;display:grid;place-items:center;overflow:hidden;margin:10px 0;border-radius:13px;background:#e9ede7}.moment-map-preview>span{z-index:1;color:#d35c4b;font-size:27px}.moment-map-preview small{position:absolute;bottom:10px;color:#737c73;font-size:10px}.moment-map-grid{position:absolute;inset:-30%;background:repeating-linear-gradient(25deg,transparent 0 32px,#fff 33px 36px,transparent 37px 70px),repeating-linear-gradient(115deg,transparent 0 48px,#d8dfd5 49px 52px,transparent 53px 90px)}.moment-location-search-row{display:flex;gap:7px}.moment-location-search{width:100%;min-height:40px;box-sizing:border-box;padding:8px 10px;border:1px solid #e6e6e6;border-radius:9px;outline:0;font:inherit;font-size:13px}.moment-location-search-row button,.moment-location-confirm{min-height:38px;padding:0 12px;border:0;border-radius:9px;color:#fff;background:#788f7e;font:inherit;font-size:12px}.moment-location-confirm{width:100%;margin:9px 0}.moment-location-confirm:disabled{opacity:.55}.moment-location-result{width:100%;padding:10px 0;border:0;border-bottom:1px solid #eee;color:#555;background:#fff;text-align:left;font:inherit;font-size:11px;line-height:1.5}
 .my-profile-card{display:flex;align-items:center;gap:15px;margin:10px 0 25px;padding:17px 16px;border:1px solid #e8ece9;border-radius:22px;background:linear-gradient(145deg,#ffffffed,#f5f8f6e8);box-shadow:0 9px 25px #30483e0b}.my-profile-avatar{width:64px;height:64px;flex:none;display:grid;place-items:center;overflow:hidden;padding:0;border:0;border-radius:50%;color:#779185;background:#e8eeeb;font-size:25px;font-weight:600}.my-profile-avatar img{width:100%;height:100%;object-fit:cover}.my-profile-copy{min-width:0;flex:1}.my-profile-copy strong{display:block;overflow:hidden;color:#3d4943;font-size:17px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.my-profile-copy p{display:-webkit-box;overflow:hidden;margin:5px 0 0;color:#78827c;font-size:12px;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}.my-profile-copy p.empty-bio{color:#9a9f9b}.my-profile-edit{display:flex;align-items:center;gap:4px;flex:none;padding:8px 0 8px 6px;border:0;color:#648574;background:transparent;font:inherit;font-size:10px;letter-spacing:.02em;cursor:pointer}.my-profile-edit span{font-size:17px;line-height:1}
@@ -4224,7 +4339,7 @@ function dismissFriendRequest(request) {
 .preset-config-page{position:fixed;inset:0;z-index:42;overflow:hidden;background:#f5f6f5}
 .preset-config-content{position:relative;width:100%;height:100%;display:flex;flex-direction:column;padding:0 20px calc(env(safe-area-inset-bottom) + 14px);color:#424348;background:transparent}
 .preset-config-header{position:absolute;z-index:5;top:0;left:-20px;right:-20px;height:calc(52px + env(safe-area-inset-top));display:grid;grid-template-columns:48px minmax(0,1fr) 72px;align-items:center;padding:calc(env(safe-area-inset-top) + 4px) 20px 0;box-sizing:border-box;background:rgba(255,255,255,.5);border-bottom:1px solid rgba(220,225,221,.38);backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4)}
-.preset-config-scroll{position:relative;z-index:0;width:min(100%,620px);min-height:0;height:100%;flex:1;overflow:auto;margin:0 auto;padding:calc(52px + env(safe-area-inset-top) + 17px) 2px 18px;scrollbar-width:none;scrollbar-color:transparent transparent;background:#f5f6f5}.preset-config-header>button:first-child{width:40px;height:40px;border:0;color:#5d5e60;background:transparent;font-size:27px;line-height:1;cursor:pointer}
+.preset-config-scroll{overscroll-behavior:contain;position:relative;z-index:0;width:min(100%,620px);min-height:0;height:100%;flex:1;overflow:auto;margin:0 auto;padding:calc(52px + env(safe-area-inset-top) + 17px) 2px 18px;scrollbar-width:none;scrollbar-color:transparent transparent;background:#f5f6f5}.preset-config-header>button:first-child{width:40px;height:40px;border:0;color:#5d5e60;background:transparent;font-size:27px;line-height:1;cursor:pointer}
 .preset-config-header>div{text-align:center}
 .preset-config-header h2{margin:0;color:#55565a;font-size:17px;font-weight:550;letter-spacing:.04em}
 .preset-config-header small{display:block;margin-top:4px;color:#aaa9a5;font-size:9px}
@@ -4609,5 +4724,14 @@ function dismissFriendRequest(request) {
 
 /* 转发聊天记录：选择框与聊天内的转发卡片 */.forward-sheet{width:min(340px,100%);max-height:70vh;overflow:auto;box-sizing:border-box;padding:16px;border-radius:18px;background:#fff;color:#1c1c1e;box-shadow:0 18px 40px rgba(0,0,0,.18)}.forward-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.forward-head h2{flex:1;min-width:0;margin:0;text-align:center;font-size:16px;font-weight:600;white-space:nowrap}.forward-back,.forward-close{flex:none;width:28px;border:0;background:none;font-size:22px;color:#8e8e93;cursor:pointer;padding:0}.forward-hint{margin:6px 0 12px;font-size:12px;color:#8e8e93;line-height:1.6}.forward-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}.forward-list button{width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:12px;background:#f2f2f7;color:#1c1c1e;font:inherit;font-size:14px;text-align:left;cursor:pointer}.forward-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:14px;font-weight:600;flex:none}.forward-card{min-width:200px;max-width:240px;padding:12px 14px;border-radius:14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:4px;color:#1c1c1e}.forward-card-head{display:flex;align-items:center;gap:6px;font-size:11px;color:#8e8e93}.forward-card-head svg{width:14px;height:14px}.forward-card strong{font-size:14px;font-weight:600}.forward-card small{font-size:12px;color:#8e8e93}
 .forward-pick{margin:0 0 12px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}.forward-pick label{display:grid;grid-template-columns:18px 42px 1fr;align-items:start;gap:8px;padding:8px 10px;border-radius:12px;background:#f2f2f7;font-size:13px;line-height:1.5;cursor:pointer}.forward-pick label.on{background:#e5f0ff}.forward-pick input{margin-top:3px}.forward-pick-who{font-size:12px;color:#8e8e93}.forward-pick-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.forward-actions{display:flex;justify-content:flex-end}.forward-next{min-height:36px;padding:0 16px;border:0;border-radius:12px;background:#0a84ff;color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}.forward-next:disabled{opacity:.4;cursor:default}
+/* 朋友圈图标按钮：评论与翻译改为线性图标，不再显示文字。 */
+:deep(.moment-actions button.moment-comment-button){width:28px;height:28px;padding:0;display:inline-grid;place-items:center;border-radius:50%;color:#8e8e93}
+:deep(.moment-actions button.moment-comment-button:active){background:#f2f2f7}
+:deep(.moment-translate-button.moment-translate-icon){width:22px;height:22px;margin:4px 0 0;padding:0;display:inline-grid;place-items:center;border-radius:50%;font-size:0;color:#8e8e93}
+:deep(.moment-translate-button.moment-translate-icon:active){background:#f2f2f7}
+:deep(.moment-translate-button.moment-translate-icon:disabled){opacity:.5}
+.icon-spin{animation:icon-spin .9s linear infinite}
+@keyframes icon-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.icon-spin{animation:none}}
 .forward-more{width:100%;margin:0 0 8px;min-height:32px;border:0;border-radius:10px;background:#f2f2f7;color:#0a84ff;font:inherit;font-size:13px;cursor:pointer}
 </style>

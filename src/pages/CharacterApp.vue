@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Check, ChevronLeft, ImagePlus, Maximize2 } from 'lucide-vue-next'
 import CharacterIcon from '@/components/icons/CharacterIcon.vue'
 import PixelArtwork from '@/components/PixelArtwork.vue'
 import PixelOrangeCat from '@/components/PixelOrangeCat.vue'
@@ -10,6 +11,7 @@ import PixelPortrait from '@/components/PixelPortrait.vue'
 import HandheldControlIcon from '@/components/HandheldControlIcon.vue'
 import { characterFrame } from '@/components/animalFrames'
 import { loadValue, saveValue } from '@/stores/db'
+import { phoneData } from '@/stores/phone'
 import WorldPanel from '@/components/WorldPanel.vue'
 import { generateCharacterBrief } from '@/components/pet/generateCharacterBrief'
 import { worldData, loadWorlds, worldOf } from '@/stores/worlds'
@@ -55,7 +57,15 @@ function cancelBrief() {
 
 // 世界面板里改了成员或世界，角色的 worldId 变化要保存到角色列表
 function onWorldChanged() {
+  // 世界被删除后，属于它的角色移出该世界（worldId 清空），不再指向已删除的世界
+  const validIds = new Set(worldData.worlds.map((w) => w.id))
+  for (const c of characters.value) {
+    if (c.worldId && !validIds.has(c.worldId)) c.worldId = ''
+  }
+  // 地图列表同步：移除已删除世界的地图，并在需要时切换到仍存在的地图
+  syncMapsWithWorlds()
   characters.value = [...characters.value]
+  void persistMaps()
 }
 
 const emit = defineEmits(['close'])
@@ -73,6 +83,199 @@ const detailsTarget = computed(() => (view.value === 'poster' ? editDraft.value 
 const WALL_KEY = 'jyos_character_wall_positions'
 const wallRef = ref(null)
 const wallPositions = ref({})
+// 多张地图：每张地图对应一个世界（worldId 为空表示无世界）。每张地图各自保存角色位置和便利贴。
+const MAPS_KEY = 'jyos_character_maps'
+const wallMaps = ref([{ id: 'map-default', name: '无世界', worldId: '' }])
+const currentMapId = ref('map-default')
+// 地图内容：{ [mapId]: { positions: { [characterId]: {x,y} }, stickers: [ {id,text,color,x,y,rot} ] } }
+const wallMapData = ref({ 'map-default': { positions: {}, stickers: [] } })
+function ensureMapData(mapId) {
+  if (!wallMapData.value[mapId]) wallMapData.value[mapId] = { positions: {}, stickers: [] }
+  return wallMapData.value[mapId]
+}
+const currentMap = computed(() => wallMaps.value.find((m) => m.id === currentMapId.value) || wallMaps.value[0])
+const currentMapStickers = computed(() => ensureMapData(currentMapId.value).stickers)
+// 桌面只显示属于当前地图（即当前世界）的角色
+const mapCharacters = computed(() => characters.value.filter((c) => (c.worldId || '') === (currentMap.value?.worldId || '')))
+// 当前地图中角色的位置（只读视图，写入仍走 wallPositions 的兼容路径）
+const mapPositions = computed(() => ensureMapData(currentMapId.value).positions)
+// 切换到某个世界对应的地图；没有地图时新建一张
+function mapForWorld(worldId) {
+  const existing = wallMaps.value.find((m) => m.worldId === (worldId || ''))
+  if (existing) return existing.id
+  const name = worldId ? (worldOf(worldId)?.name || '未命名世界') : '无世界'
+  const map = { id: `map-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, worldId: worldId || '' }
+  wallMaps.value = [...wallMaps.value, map]
+  ensureMapData(map.id)
+  return map.id
+}
+function switchMap(mapId) {
+  if (!wallMaps.value.some((m) => m.id === mapId)) return
+  currentMapId.value = mapId
+  // 角色位置是按地图保存的，切换后要把当前地图的位置同步到拖动代码使用的 wallPositions
+  wallPositions.value = { ...ensureMapData(mapId).positions }
+  resetWallView()
+}
+// 每个世界都有一张地图，世界增删后同步地图列表
+function syncMapsWithWorlds() {
+  mapForWorld('')
+  for (const world of worldData.worlds) mapForWorld(world.id)
+  // 地图对应的世界已被删除：保留地图数据但不再作为可选地图
+  const ids = new Set(['', ...worldData.worlds.map((w) => w.id)])
+  wallMaps.value = wallMaps.value.filter((m) => ids.has(m.worldId))
+  if (!wallMaps.value.some((m) => m.id === currentMapId.value)) switchMap(wallMaps.value[0].id)
+}
+
+// ===== 顶栏：地图菜单、重命名 =====
+const mapMenuOpen = ref(false)
+const mapRenameOpen = ref(false)
+const mapRenameDraft = ref('')
+function pickMap(mapId) {
+  switchMap(mapId)
+  mapMenuOpen.value = false
+}
+function mapCharacterCount(map) {
+  return characters.value.filter((c) => (c.worldId || '') === (map.worldId || '')).length
+}
+function openMapRename() {
+  mapRenameDraft.value = currentMap.value?.name || ''
+  mapRenameOpen.value = true
+}
+async function saveMapRename() {
+  const name = mapRenameDraft.value.trim().slice(0, 40)
+  if (!name || !currentMap.value) return
+  currentMap.value.name = name
+  mapRenameOpen.value = false
+  await persistMaps()
+}
+
+// ===== 贴纸（便利贴）=====
+const stickerPanelOpen = ref(false)
+const STICKER_COLORS = ['#fff3a3', '#ffd6e0', '#cdeffd', '#d9f5dc', '#ffe0b8', '#e8e0ff']
+const stickerDraft = ref({ text: '', color: STICKER_COLORS[0] })
+const stickerColors = STICKER_COLORS
+function addSticker() {
+  const text = stickerDraft.value.text.trim().slice(0, 80)
+  if (!text) return
+  const sticker = {
+    id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    text,
+    color: stickerDraft.value.color,
+    x: 38 + Math.round(Math.random() * 16),
+    y: 38 + Math.round(Math.random() * 16),
+    rot: Math.round(Math.random() * 10) - 5,
+  }
+  ensureMapData(currentMapId.value).stickers.push(sticker)
+  stickerDraft.value = { text: '', color: stickerDraft.value.color }
+  void persistMaps()
+}
+function removeSticker(id) {
+  const data = ensureMapData(currentMapId.value)
+  data.stickers = data.stickers.filter((s) => s.id !== id)
+  void persistMaps()
+}
+function updateStickerText(id, text) {
+  const sticker = ensureMapData(currentMapId.value).stickers.find((s) => s.id === id)
+  if (!sticker) return
+  sticker.text = String(text || '').slice(0, 80)
+  void persistMaps()
+}
+function updateStickerColor(id, color) {
+  const sticker = ensureMapData(currentMapId.value).stickers.find((s) => s.id === id)
+  if (!sticker) return
+  sticker.color = color
+  void persistMaps()
+}
+// 编辑便利贴：打开贴纸面板并预填内容，保存时更新
+const editingNoteId = ref('')
+function editNote(sticker) {
+  editingNoteId.value = sticker.id
+  stickerDraft.value = { text: sticker.text, color: sticker.color }
+  stickerPanelOpen.value = true
+}
+function saveNoteEdit() {
+  if (!editingNoteId.value) return
+  const text = stickerDraft.value.text.trim()
+  if (!text) return
+  updateStickerText(editingNoteId.value, text)
+  updateStickerColor(editingNoteId.value, stickerDraft.value.color)
+  editingNoteId.value = ''
+  stickerDraft.value = { text: '', color: STICKER_COLORS[0] }
+  stickerPanelOpen.value = false
+}
+// 便利贴拖动：和角色拖动用同样的换算（相对画布的百分比，并考虑缩放）
+const noteDrag = ref(null)
+// 便签同样是长按拖动、点按编辑。按在便签自己的按钮上不处理，交给按钮的点击。
+let notePressTimer = null
+let notePressStart = null
+function startNoteDrag(event, sticker) {
+  if (event.target.closest('button')) return
+  const board = wallRef.value
+  if (!board) return
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  notePressStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, sticker }
+  notePressTimer = setTimeout(() => {
+    noteDrag.value = { id: sticker.id, startX: notePressStart.x, startY: notePressStart.y, origX: sticker.x, origY: sticker.y, rect: board.getBoundingClientRect(), zoom: wallZoom.value, moved: false }
+    notePressStart = null
+    if (navigator.vibrate) navigator.vibrate(10)
+  }, LONG_PRESS_MS)
+}
+function cancelNotePress() {
+  clearTimeout(notePressTimer)
+  notePressTimer = null
+  notePressStart = null
+}
+function trackNotePress(event) {
+  if (!notePressStart || event.pointerId !== notePressStart.pointerId) return
+  if (Math.abs(event.clientX - notePressStart.x) + Math.abs(event.clientY - notePressStart.y) > LONG_PRESS_SLOP) cancelNotePress()
+}
+function onNoteDrag(event) {
+  trackNotePress(event)
+  const drag = noteDrag.value
+  if (!drag) return
+  const dx = event.clientX - drag.startX
+  const dy = event.clientY - drag.startY
+  if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true
+  const scale = drag.zoom * WALL_BASE
+  const x = Math.min(95, Math.max(0, drag.origX + (dx / drag.rect.width / scale) * 100))
+  const y = Math.min(95, Math.max(0, drag.origY + (dy / drag.rect.height / scale) * 100))
+  const sticker = ensureMapData(currentMapId.value).stickers.find((s) => s.id === drag.id)
+  if (sticker) {
+    sticker.x = x
+    sticker.y = y
+  }
+}
+function endNoteDrag() {
+  // 仍在计时：是点按，打开编辑
+  if (notePressTimer && notePressStart) {
+    const sticker = notePressStart.sticker
+    cancelNotePress()
+    if (tiltMode.value) selectTiltTarget({ kind: 'note', id: sticker.id })
+    else editNote(sticker)
+    return
+  }
+  const drag = noteDrag.value
+  noteDrag.value = null
+  if (drag?.moved) void persistMaps()
+}
+function noteStyle(sticker) {
+  return { left: `${sticker.x}%`, top: `${sticker.y}%`, background: sticker.color, transform: `rotate(${sticker.rot}deg)` }
+}
+// 旧格式（纯 { [characterId]: {x,y} }）迁移到默认地图，之后只写新格式
+function migrateWallData(saved) {
+  if (saved && Array.isArray(saved.maps)) {
+    wallMaps.value = saved.maps
+    wallMapData.value = saved.data && typeof saved.data === 'object' ? saved.data : {}
+    for (const map of wallMaps.value) ensureMapData(map.id)
+    return
+  }
+  if (saved && typeof saved === 'object') {
+    wallMapData.value = { 'map-default': { positions: { ...saved }, stickers: [] } }
+  }
+}
+async function persistMaps() {
+  await saveValue(MAPS_KEY, JSON.parse(JSON.stringify({ maps: wallMaps.value, data: wallMapData.value })))
+}
 const dragging = ref(null)
 const builderClues = [
   { key: 'name', title: '角色叫什么？', hint: '', label: '名字', placeholder: '输入角色名字' },
@@ -99,6 +302,8 @@ onMounted(() => {
 onUnmounted(() => clearInterval(clockTimer))
 
 let nextId = 1
+// 已分配过的最大角色 id。角色被删除后也不回退，避免新角色继承旧角色的聊天记录（聊天按 id 保存）。
+const ID_COUNTER_KEY = 'jyos_character_id_counter'
 
 // 好友 ID：8 位大小写字母和数字，随机生成且不与已有角色重复，删除角色后也不会被新角色复用
 const accountIdAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
@@ -126,11 +331,24 @@ onMounted(async () => {
         accountId: character.accountId || randomAccountId(takenAccountIds),
         avatarFrame: character.avatarFrame || homeData?.frames?.[character.id] || characterFrame(character)
       }))
-      nextId = Math.max(0, ...saved.map((character) => Number(character.id) || 0)) + 1
+      // 取「已保存的计数器」和「现存最大 id + 1」中较大的值：删除角色后 id 不会回退，也兼容没有计数器的旧数据
+      const savedCounter = Number(await loadValue(ID_COUNTER_KEY)) || 0
+      nextId = Math.max(savedCounter + 1, Math.max(0, ...saved.map((character) => Number(character.id) || 0)) + 1)
       if (draft.id < nextId) draft.id = nextId++
+      void saveValue(ID_COUNTER_KEY, nextId - 1)
     }
-    const savedWall = await loadValue(WALL_KEY)
-    if (savedWall && typeof savedWall === 'object') wallPositions.value = savedWall
+    const savedMaps = await loadValue(MAPS_KEY)
+    if (savedMaps && typeof savedMaps === 'object') {
+      migrateWallData(savedMaps)
+    } else {
+      // 没有新格式数据：迁移旧的全局位置，并保留原来的键不动，作为回退
+      const savedWall = await loadValue(WALL_KEY)
+      migrateWallData(savedWall && typeof savedWall === 'object' ? savedWall : null)
+    }
+    // 每个世界对应一张地图；当前地图默认取无世界的地图，之后按世界切换
+    syncMapsWithWorlds()
+    // 把当前地图的角色位置同步到拖动代码使用的 wallPositions
+    wallPositions.value = { ...ensureMapData(currentMapId.value).positions }
     const restored = await loadValue('jyos_character_builder_draft')
     if (restored && Number.isInteger(restored.id) && !characters.value.some((character) => character.id === restored.id)) {
       Object.assign(draft, restored)
@@ -146,7 +364,9 @@ watch(builderDraft, (value) => {
 }, { deep: true })
 
 function createDraft() {
-  return { id: nextId++, name: '', details: '', birthday: '', age: '', occupation: '', gender: '', avatar: '', avatarFrame: 'bunny', favorite: false, color: '#f1f1f1', worldId: '' }
+  const id = nextId++
+  void saveValue(ID_COUNTER_KEY, id)
+  return { id,name: '', details: '', birthday: '', age: '', occupation: '', gender: '', language: '', avatar: '', avatarFrame: 'bunny', favorite: false, color: '#f1f1f1', worldId: '' }
 }
 
 function createCharacter() {
@@ -208,6 +428,37 @@ async function purgeCharacterChatRefs(id) {
   }
   const requests = (await loadValue('jyos_friend_requests')) || []
   if (Array.isArray(requests)) await saveValue('jyos_friend_requests', requests.filter((item) => item?.characterId !== id))
+  await purgeCharacterMoments(id)
+  await purgeCharacterPhone(id)
+}
+
+// 手机数据按角色 id 保存（jyos_phone_data），删除角色时一并移除，避免新角色复用 id 后继承它的手机内容
+async function purgeCharacterPhone(id) {
+  const phoneData = await loadValue('jyos_phone_data')
+  if (!phoneData || typeof phoneData !== 'object') return
+  const key = String(id)
+  // 同时清掉内存中的副本，避免之后的 persistPhoneData 把旧条目写回去
+  delete phoneData[key]
+  const saved = await loadValue('jyos_phone_data')
+  if (!saved || typeof saved !== 'object' || !(key in saved)) return
+  const next = { ...saved }
+  delete next[key]
+  await saveValue('jyos_phone_data', next)
+}
+
+// 朋友圈：删除该角色发布的动态，并移除它在其他动态下留下的点赞和评论（含回复）
+async function purgeCharacterMoments(id) {
+  const moments = await loadValue('jyos_moments')
+  if (!moments || !Array.isArray(moments.posts)) return
+  const isRemoved = (author) => author?.authorType === 'character' && author?.authorId === id
+  const posts = moments.posts
+    .filter((post) => !isRemoved(post))
+    .map((post) => ({
+      ...post,
+      likes: Array.isArray(post.likes) ? post.likes.filter((like) => !(like?.authorType === 'character' && like?.id === id)) : post.likes,
+      comments: Array.isArray(post.comments) ? post.comments.filter((comment) => !isRemoved(comment)) : post.comments,
+    }))
+  await saveValue('jyos_moments', { ...moments, posts })
 }
 
 function openClue(index) {
@@ -237,7 +488,16 @@ function wallSpot(character, index) {
   return wallPositions.value[character.id] || defaultWallSpot(index)
 }
 // 每张贴纸有固定的轻微倾斜角度（由 id 决定），刷新后不会乱跳
+// 设置某张角色贴纸在当前地图里的角度（-45 到 45 度），并保存
+function setCharacterTilt(characterId, deg) {
+  const data = ensureMapData(currentMapId.value)
+  data.tilts = { ...(data.tilts || {}), [characterId]: Math.max(-45, Math.min(45, Math.round(deg))) }
+  void persistMaps()
+}
+// 角色贴纸的倾斜：优先使用当前地图里用户调整过的角度，没有则按 id 算出固定值
 function stickerTilt(character) {
+  const saved = ensureMapData(currentMapId.value).tilts?.[character.id]
+  if (Number.isFinite(Number(saved))) return Number(saved)
   return ((Number(character.id) || 1) * 37) % 13 - 6
 }
 function stickerStyle(character, index) {
@@ -278,7 +538,28 @@ function setWallZoom(next, anchor) {
   wallZoom.value = zoom
 }
 function zoomWall(factor) { setWallZoom(wallZoom.value * factor) }
-function resetWallView() { wallZoom.value = WALL_MIN_ZOOM; wallPan.value = centeredPan(WALL_MIN_ZOOM) }
+// 定位到内容：有角色照片或便签时，把它们的中心移到屏幕中央；没有内容才居中整张地图
+function resetWallView() {
+  wallZoom.value = WALL_MIN_ZOOM
+  const board = wallRef.value
+  const points = [
+    ...mapCharacters.value.map((c, i) => wallSpot(c, i)),
+    ...currentMapStickers.value.map((s) => ({ x: s.x, y: s.y })),
+  ]
+  if (!board || !points.length) {
+    wallPan.value = centeredPan(WALL_MIN_ZOOM)
+    return
+  }
+  const xs = points.map((p) => p.x)
+  const ys = points.map((p) => p.y)
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+  // 百分比是相对于墙面的 scale 倍（画布宽 = 墙面宽 × WALL_BASE × 缩放）
+  const scale = WALL_MIN_ZOOM * WALL_BASE
+  const x = board.clientWidth / 2 - (cx / 100) * board.clientWidth * scale
+  const y = board.clientHeight / 2 - (cy / 100) * board.clientHeight * scale
+  wallPan.value = clampPan({ x, y }, WALL_MIN_ZOOM)
+}
 // 每次回到贴纸墙时居中显示地图
 watch(view, (value) => { if (value === 'desk') nextTick(resetWallView) }, { immediate: true })
 function onWheelZoom(event) {
@@ -304,11 +585,12 @@ function onBoardPointerDown(event) {
     wallPanStart = null
     const [a, b] = [...wallPointers.values()]
     wallPinch = { dist: pointDistance(a, b), zoom: wallZoom.value, pan: { ...wallPan.value }, mid: midpoint(a, b) }
-  } else if (wallPointers.size === 1 && !event.target.closest('.wall-sticker')) {
+  } else if (wallPointers.size === 1) {
     wallPanStart = { x: event.clientX, y: event.clientY, pan: { ...wallPan.value } }
   }
 }
 function onBoardPointerMove(event) {
+  trackPress(event)
   if (wallPointers.has(event.pointerId)) wallPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
   if (wallPinch && wallPointers.size >= 2) {
     const board = wallRef.value
@@ -345,6 +627,7 @@ function onBoardPointerUp(event) {
     wallPanStart = null
   }
   if (dragging.value) endDrag(characters.value.find((c) => c.id === dragging.value.id))
+  else if (pressStart && pressStart.pointerId === event.pointerId) releaseCharacterPress()
 }
 function onBoardPointerCancel(event) {
   wallPointers.delete(event.pointerId)
@@ -353,12 +636,73 @@ function onBoardPointerCancel(event) {
   dragging.value = null
 }
 
+// 长按拖动：按下后要按住 LONG_PRESS_MS 才进入拖动；按住期间手指移动超过阈值则视为滑动，取消长按
+const LONG_PRESS_MS = 350
+const LONG_PRESS_SLOP = 8
+let pressTimer = null
+let pressStart = null
+function cancelPress() {
+  clearTimeout(pressTimer)
+  pressTimer = null
+  pressStart = null
+}
 function startDrag(event, character, index) {
   const board = wallRef.value
   if (!board) return
   const spot = wallSpot(character, index)
-  dragging.value = { id: character.id, startX: event.clientX, startY: event.clientY, origX: spot.x, origY: spot.y, rect: board.getBoundingClientRect(), zoom: wallZoom.value, moved: false }
   event.currentTarget.setPointerCapture?.(event.pointerId)
+  pressStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, character }
+  pressTimer = setTimeout(() => {
+    dragging.value = { id: character.id, startX: pressStart.x, startY: pressStart.y, origX: spot.x, origY: spot.y, rect: board.getBoundingClientRect(), zoom: wallZoom.value, moved: false }
+    pressStart = null
+    if (navigator.vibrate) navigator.vibrate(10)
+  }, LONG_PRESS_MS)
+}
+// 按住期间的移动：超过阈值就取消长按，让手指变成平移画布
+function trackPress(event) {
+  if (!pressStart || event.pointerId !== pressStart.pointerId) return
+  if (Math.abs(event.clientX - pressStart.x) + Math.abs(event.clientY - pressStart.y) > LONG_PRESS_SLOP) cancelPress()
+}
+// 松手时：长按还没触发（仍在计时）就是点按，直接打开档案；长按已进入拖动则交给 endDrag 处理
+function releaseCharacterPress() {
+  if (pressTimer && pressStart) {
+    const character = pressStart.character
+    cancelPress()
+    if (tiltMode.value) selectTiltTarget({ kind: 'character', id: character.id })
+    else openPoster(character)
+  }
+}
+
+// ===== 角度调整模式 =====
+// 进入后，点按贴纸选中它，底部出现滑块调整角度；再点顶栏按钮退出
+const tiltMode = ref(false)
+const tiltTarget = ref(null)
+function toggleTiltMode() {
+  tiltMode.value = !tiltMode.value
+  tiltTarget.value = null
+}
+function selectTiltTarget(target) {
+  tiltTarget.value = target
+}
+const tiltTargetValue = computed(() => {
+  const t = tiltTarget.value
+  if (!t) return 0
+  if (t.kind === 'character') return stickerTilt(characters.value.find((c) => c.id === t.id) || { id: t.id })
+  const sticker = currentMapStickers.value.find((s) => s.id === t.id)
+  return sticker ? sticker.rot : 0
+})
+function onTiltInput(event) {
+  const t = tiltTarget.value
+  if (!t) return
+  const deg = Number(event.target.value)
+  if (t.kind === 'character') setCharacterTilt(t.id, deg)
+  else {
+    const sticker = currentMapStickers.value.find((s) => s.id === t.id)
+    if (sticker) {
+      sticker.rot = Math.max(-45, Math.min(45, Math.round(deg)))
+      void persistMaps()
+    }
+  }
 }
 function onDrag(event) {
   const drag = dragging.value
@@ -377,9 +721,11 @@ function endDrag(character) {
   const drag = dragging.value
   dragging.value = null
   if (!drag) return
-  // 没有移动视为点击，打开档案；移动过则保存新位置
-  if (drag.moved) void saveValue(WALL_KEY, JSON.parse(JSON.stringify(wallPositions.value)))
-  else openPoster(character)
+  // 长按进入过拖动：位置写回当前地图并保存。长按后松手不打开档案，避免误开。
+  if (drag.moved) {
+    ensureMapData(currentMapId.value).positions = { ...wallPositions.value }
+    void persistMaps()
+  }
 }
 
 function selectDraftAvatar(event) {
@@ -407,31 +753,51 @@ function selectDraftAvatar(event) {
 <template>
   <div class="character-app">
     <section v-if="view === 'desk'" class="wall-page" aria-label="角色贴纸墙">
+      <header class="wall-topbar" aria-label="地图顶栏">
+        <button type="button" class="wall-map-switch" :aria-expanded="mapMenuOpen" aria-label="切换地图" @click="mapMenuOpen = !mapMenuOpen">
+          <span class="wall-map-name">{{ currentMap?.name || '无世界' }}</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="wall-topbar-actions">
+          <button type="button" class="wall-top-btn" aria-label="贴纸" title="贴纸" @click="stickerPanelOpen = true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v5.5H20.5"/></svg>
+          </button>
+          <button type="button" class="wall-top-btn" :class="{ on: tiltMode }" aria-label="调整角度" title="调整角度" @click="toggleTiltMode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><path d="m7.8 7.8 2.1 2.1M14.1 14.1l2.1 2.1M7.8 16.2l2.1-2.1M14.1 9.9l2.1-2.1"/></svg></button>
+          <button type="button" class="wall-top-btn" aria-label="编辑地图" title="编辑地图" @click="openMapRename">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>
+          </button>
+        </div>
+        <ul v-if="mapMenuOpen" class="wall-map-menu" role="listbox" aria-label="地图列表">
+          <li v-for="map in wallMaps" :key="map.id" role="option" :aria-selected="map.id === currentMapId">
+            <button type="button" :class="{ on: map.id === currentMapId }" @click="pickMap(map.id)">
+              <span>{{ map.name }}</span>
+              <small>{{ mapCharacterCount(map) }} 人</small>
+            </button>
+          </li>
+        </ul>
+      </header>
       <div ref="wallRef" class="wall-board" @wheel.prevent="onWheelZoom" @pointerdown="onBoardPointerDown" @pointermove="onBoardPointerMove" @pointerup="onBoardPointerUp" @pointercancel="onBoardPointerCancel">
         <div class="wall-canvas" :style="{ width: `${wallZoom * WALL_BASE * 100}%`, height: `${wallZoom * WALL_BASE * 100}%`, transform: `translate(${wallPan.x}px, ${wallPan.y}px)` }">
-        <svg class="wall-map" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <path class="wall-water" d="M-5 64 C18 56 34 72 58 65 S92 57 105 66 V110 H-5Z"/>
-          <rect class="wall-park" x="68" y="6" width="24" height="18" rx="1.5"/>
-          <path class="wall-road wall-road-main" d="M-5 30 H105"/>
-          <path class="wall-road wall-road-main" d="M46 -5 V105"/>
-          <path class="wall-road" d="M-5 84 C30 78 62 90 105 80"/>
-          <path class="wall-road" d="M72 24 V64"/>
-          <path class="wall-road" d="M4 -5 C12 20 8 44 18 105"/>
-        </svg>
-        <span class="wall-place wall-place-park">花园</span>
-        <span class="wall-place wall-place-road">中央大道</span>
-        <span class="wall-place wall-place-water">河岸</span>
-        <span class="wall-compass" aria-hidden="true">N<b>↑</b></span>
-        <span class="wall-scale" aria-hidden="true">0 — 100m</span>
-        <i class="wall-star star-a" aria-hidden="true">✦</i><i class="wall-star star-b" aria-hidden="true">✧</i><i class="wall-star star-c" aria-hidden="true">✦</i>
-        <span class="wall-deco deco-ring" aria-hidden="true"></span>
-        <span class="wall-deco deco-tape" aria-hidden="true"></span>
-        <span class="wall-deco deco-note deco-note-hint" aria-hidden="true">双指缩放地图<br/>拖动贴纸调整位置</span>
-        <span class="wall-deco deco-note deco-note-warm" aria-hidden="true">周末想去的地方</span>
-        <span class="wall-deco deco-note deco-note-cool" aria-hidden="true">还没见过的人</span>
+        <div
+          v-for="sticker in currentMapStickers"
+          :key="sticker.id"
+          class="wall-note"
+          :style="noteStyle(sticker)" @pointerdown="startNoteDrag($event, sticker)" @pointermove="onNoteDrag" @pointerup="endNoteDrag" @pointercancel="endNoteDrag"
+          :aria-label="`便利贴：${sticker.text}`"
+        >
+          <span class="wall-note-text">{{ sticker.text }}</span>
+          <div class="wall-note-actions">
+            <button type="button" aria-label="编辑便利贴" @click.stop="editNote(sticker)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>
+            </button>
+            <button type="button" aria-label="删除便利贴" @click.stop="removeSticker(sticker.id)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
         <p v-if="!characters.length" class="wall-empty">把第一张角色档案放到地图上吧。点击底部的「+ 新建」开始。</p>
         <button
-          v-for="(character, index) in characters"
+          v-for="(character, index) in mapCharacters"
           :key="character.id"
           type="button"
           class="wall-sticker"
@@ -450,6 +816,47 @@ function selectDraftAvatar(event) {
         </button>
         </div>
       </div>
+      <div v-if="stickerPanelOpen" class="wall-sheet-mask" @click.self="stickerPanelOpen = false; editingNoteId = ''">
+        <section class="wall-sheet" role="dialog" aria-modal="true" aria-label="贴纸">
+          <header class="wall-sheet-head">
+            <strong>{{ editingNoteId ? '编辑便利贴' : '贴纸' }}</strong>
+            <button type="button" aria-label="关闭" @click="stickerPanelOpen = false; editingNoteId = ''">×</button>
+          </header>
+          <textarea v-model="stickerDraft.text" class="wall-sheet-input" rows="3" maxlength="80" placeholder="写点什么，比如：周末去海边"></textarea>
+          <div class="wall-sheet-colors" role="radiogroup" aria-label="便利贴颜色">
+            <button v-for="c in stickerColors" :key="c" type="button" role="radio" :aria-checked="stickerDraft.color === c" :aria-label="`颜色 ${c}`" class="wall-color" :class="{ on: stickerDraft.color === c }" :style="{ background: c }" @click="stickerDraft.color = c"></button>
+          </div>
+          <div class="wall-sheet-actions">
+            <button v-if="!editingNoteId" type="button" class="wall-sheet-primary" :disabled="!stickerDraft.text.trim()" @click="addSticker">贴到地图上</button>
+            <button v-else type="button" class="wall-sheet-primary" :disabled="!stickerDraft.text.trim()" @click="saveNoteEdit">保存</button>
+          </div>
+          <p class="wall-sheet-hint">便利贴贴在当前地图上，可以直接拖动位置。</p>
+        </section>
+      </div>
+      <div v-if="mapRenameOpen" class="wall-sheet-mask wall-sheet-mask-center"@click.self="mapRenameOpen = false">
+        <section class="wall-sheet wall-sheet-small" role="dialog" aria-modal="true" aria-label="重命名地图">
+          <header class="wall-sheet-head"><strong>地图名称</strong><button type="button" aria-label="关闭" @click="mapRenameOpen = false">×</button></header>
+          <input v-model="mapRenameDraft" class="wall-sheet-input-line" maxlength="40" placeholder="地图名称" />
+          <div class="wall-sheet-actions">
+            <button type="button" class="wall-sheet-primary" :disabled="!mapRenameDraft.trim()" @click="saveMapRename">保存</button>
+          </div>
+        </section>
+      </div>
+      <div v-if="tiltMode" class="wall-tilt-bar" role="group" aria-label="调整角度">
+        <span class="wall-tilt-hint">{{ tiltTarget ? '拖动滑块调整角度' : '点一张贴纸或便利贴' }}</span>
+        <input
+          v-if="tiltTarget"
+          type="range"
+          min="-45"
+          max="45"
+          step="1"
+          :value="tiltTargetValue"
+          aria-label="角度"
+          @input="onTiltInput"
+        />
+        <span v-if="tiltTarget" class="wall-tilt-value">{{ tiltTargetValue }}°</span>
+        <button type="button" class="wall-tilt-done" @click="toggleTiltMode">完成</button>
+      </div>
       <nav class="wall-float" aria-label="贴纸墙操作">
         <button type="button" class="wall-back" aria-label="返回桌面" @click="emit('close')">←</button>
         <span>{{ characters.length ? `${characters.length} 张档案` : '还没有角色' }}</span>
@@ -462,87 +869,135 @@ function selectDraftAvatar(event) {
         <button type="button" class="wall-world" aria-label="世界" @click="openWorldPanel">世界</button>
       </nav>
     </section>
-    <section v-else-if="view === 'poster' && posterCharacter" class="pf-page" aria-label="角色档案">
-      <button type="button" class="nb-close" aria-label="返回贴纸墙" @click="returnToDesk">←</button>
-      <div v-if="editDraft" class="pf-file">
-        <div class="nb-photo-wrap">
+    <section v-else-if="view === 'poster' && posterCharacter" class="pf-page nb-page" aria-label="角色档案">
+      <button type="button" class="nb-close" aria-label="返回贴纸墙" @click="returnToDesk"><ChevronLeft :size="22" :stroke-width="1.8" /></button>
+      <div v-if="editDraft" class="nb-file pf-file">
+        <header class="nb-head">
+          <div class="nb-head-text">
+            <h1>ARCHIVE</h1>
+            <p>角色档案 · 编辑</p>
+          </div>
+          <span class="nb-id">ID: {{ String(posterCharacter.id).padStart(4, '0') }}</span>
+        </header>
+
+        <div class="nb-top">
           <label class="nb-photo" :class="{ empty: !editDraft.avatar }">
             <img v-if="editDraft.avatar" :src="editDraft.avatar" :alt="editDraft.name || '角色照片'"/>
-            <span v-else>+ 照片</span>
+            <span v-else class="nb-photo-empty"><ImagePlus :size="26" :stroke-width="1.6" /><small>选择照片</small></span>
             <input type="file" accept="image/*" @change="selectDraftAvatar"/>
           </label>
-        </div>
-        <p class="nb-code">FILE · {{ String(posterCharacter.id).padStart(4, '0') }} · 机密</p>
-        <div class="nb-fields">
-          <label class="nb-field"><span>姓名</span><input v-model="editDraft.name" maxlength="80" placeholder="角色名字"/></label>
-          <label class="nb-field"><span>身份</span><input v-model="editDraft.occupation" maxlength="80" placeholder="角色身份"/></label>
-          <label class="nb-field"><span>所属世界</span>
-            <select v-model="editDraft.worldId">
-              <option value="">无世界</option>
-              <option v-for="w in worldData.worlds" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </label>
-          <div class="nb-row">
-            <label class="nb-field"><span>称呼</span><input v-model="editDraft.gender" maxlength="40"/></label>
-            <label class="nb-field"><span>年龄</span><input v-model="editDraft.age" maxlength="40" placeholder="年龄"/></label>
+          <div class="nb-top-fields">
+            <label class="nb-field nb-field-name"><span>姓名</span><input v-model="editDraft.name" maxlength="80" placeholder="角色名字"/></label>
+            <div class="nb-meta">
+              <label class="nb-field"><span>身份</span><input v-model="editDraft.occupation" maxlength="80" placeholder="角色身份"/></label>
+              <label class="nb-field"><span>所属世界</span>
+                <select v-model="editDraft.worldId">
+                  <option value="">无世界</option>
+                  <option v-for="w in worldData.worlds" :key="w.id" :value="w.id">{{ w.name }}</option>
+                </select>
+              </label>
+            </div>
           </div>
-          <label class="nb-field"><span>生日</span><input v-model="editDraft.birthday" type="date"/></label>
-          <label class="nb-field nb-field-long">
-            <span class="nb-field-head">设定<button type="button" class="nb-expand" @click="expandedDetails = true">展开</button></span>
-            <textarea v-model="editDraft.details" rows="4" placeholder="性格、外貌、经历……（详细设定，只给角色自己看）"/>
-            <span class="nb-field-head">世界摘要<button type="button" class="brief-btn" :disabled="briefBusy" @click="briefBusy ? cancelBrief() : writeBrief(editDraft)">{{ briefBusy ? '取消' : '让 AI 写' }}</button></span>
-            <textarea v-model="editDraft.summary" rows="3" maxlength="400" placeholder="一两句话的简介，会告诉同世界里认识他的角色。可以让 AI 根据设定写。"/>
-            <span v-if="briefError" class="brief-error">{{ briefError }}</span>
-          </label>
         </div>
+
+        <div class="nb-grid">
+          <label class="nb-field"><span>称呼</span><input v-model="editDraft.gender" maxlength="40"/></label>
+          <label class="nb-field"><span>年龄</span><input v-model="editDraft.age" maxlength="40" placeholder="年龄"/></label>
+          <label class="nb-field nb-field-wide"><span>生日</span><input v-model="editDraft.birthday" type="date"/></label>
+          <label class="nb-field nb-field-wide"><span>回复语言</span><input v-model="editDraft.language" maxlength="40" placeholder="例如：日语、英语、粤语（留空则跟随对话）"/></label>
+        </div>
+
+        <section class="nb-block">
+          <div class="nb-block-head">
+            <h2>设定</h2>
+            <button type="button" class="nb-expand" aria-label="放大编辑设定" @click="expandedDetails = true"><Maximize2 :size="15" :stroke-width="1.8" /></button>
+          </div>
+          <textarea v-model="editDraft.details" rows="9" placeholder="性格、外貌、经历……（详细设定，只给角色自己看）"/>
+        </section>
+
+        <section class="nb-block">
+          <div class="nb-block-head">
+            <h2>世界摘要</h2>
+            <button type="button" class="brief-btn nb-brief-btn" :disabled="briefBusy" @click="briefBusy ? cancelBrief() : writeBrief(editDraft)">{{ briefBusy ? '取消' : 'AI 生成' }}</button>
+          </div>
+          <p class="nb-hint">同一世界里认识 TA 的角色会看到这段简介，借此了解 TA 的基本情况。</p>
+          <textarea v-model="editDraft.summary" rows="5" maxlength="400" placeholder="一两句话的简介。可以让 AI 根据设定写。"/>
+          <span v-if="briefError" class="brief-error">{{ briefError }}</span>
+        </section>
+
         <footer class="nb-foot">
-          <button v-if="selectedForTrash !== posterCharacter.id" type="button" class="pf-delete" @click="selectedForTrash = posterCharacter.id">删除</button>
+          <template v-if="selectedForTrash !== posterCharacter.id">
+            <button type="button" class="pf-delete" @click="selectedForTrash = posterCharacter.id">删除</button>
+          </template>
           <template v-else>
-            <span>删除后无法恢复</span>
+            <span class="nb-foot-hint">删除后无法恢复</span>
             <button type="button" class="pf-delete pf-delete-confirm" @click="discardSelectedCharacter">确认</button>
             <button type="button" class="pf-delete" @click="selectedForTrash = null">取消</button>
           </template>
-          <button type="button" class="nb-save" @click="savePosterEdits">保存</button>
+          <button type="button" class="nb-save" @click="savePosterEdits"><Check :size="15" :stroke-width="2" />保存</button>
         </footer>
       </div>
     </section>
     <transition name="builder-enter">
       <section v-if="view === 'builder' && builderDraft" class="nb-page" aria-label="新建角色">
-        <button type="button" class="nb-close" aria-label="返回贴纸墙" @click="view = 'desk'">←</button>
+        <button type="button" class="nb-close" aria-label="返回贴纸墙" @click="view = 'desk'"><ChevronLeft :size="22" :stroke-width="1.8" /></button>
         <div class="nb-file">
-          <div class="nb-photo-wrap">
+          <header class="nb-head">
+            <div class="nb-head-text">
+              <h1>NEW ARCHIVE</h1>
+              <p>角色档案 · 新建</p>
+            </div>
+            <span class="nb-id">ID: {{ String(builderDraft.id).padStart(4, '0') }}</span>
+          </header>
+
+          <div class="nb-top">
             <label class="nb-photo" :class="{ empty: !builderDraft.avatar }">
               <img v-if="builderDraft.avatar" :src="builderDraft.avatar" :alt="builderDraft.name || '角色照片'"/>
-              <span v-else>+ 照片</span>
+              <span v-else class="nb-photo-empty"><ImagePlus :size="26" :stroke-width="1.6" /><small>选择照片</small></span>
               <input type="file" accept="image/*" @change="selectDraftAvatar"/>
             </label>
-          </div>
-          <p class="nb-code">FILE · {{ String(builderDraft.id).padStart(4, '0') }} · 机密</p>
-          <div class="nb-fields">
-            <label class="nb-field"><span>姓名</span><input v-model="builderDraft.name" maxlength="80" placeholder="必填" autofocus/></label>
-            <label class="nb-field"><span>身份</span><input v-model="builderDraft.occupation" maxlength="80" placeholder="例如：夜班护士"/></label>
-            <label class="nb-field"><span>所属世界</span>
-              <select v-model="builderDraft.worldId">
-                <option value="">无世界</option>
-                <option v-for="w in worldData.worlds" :key="w.id" :value="w.id">{{ w.name }}</option>
-              </select>
-            </label>
-            <div class="nb-row">
-              <label class="nb-field"><span>称呼</span><input v-model="builderDraft.gender" maxlength="40"/></label>
-              <label class="nb-field"><span>年龄</span><input v-model="builderDraft.age" maxlength="40" placeholder="二十多岁"/></label>
+            <div class="nb-top-fields">
+              <label class="nb-field nb-field-name"><span>姓名</span><input v-model="builderDraft.name" maxlength="80" placeholder="必填" autofocus/></label>
+              <div class="nb-meta">
+                <label class="nb-field"><span>身份</span><input v-model="builderDraft.occupation" maxlength="80" placeholder="例如：夜班护士"/></label>
+                <label class="nb-field"><span>所属世界</span>
+                  <select v-model="builderDraft.worldId">
+                    <option value="">无世界</option>
+                    <option v-for="w in worldData.worlds" :key="w.id" :value="w.id">{{ w.name }}</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <label class="nb-field"><span>生日</span><input v-model="builderDraft.birthday" type="date"/></label>
-            <label class="nb-field nb-field-long">
-              <span class="nb-field-head">设定<button type="button" class="nb-expand" @click="expandedDetails = true">展开</button></span>
-              <textarea v-model="builderDraft.details" rows="4" placeholder="性格、外貌、经历……（详细设定，只给角色自己看）"/>
-              <span class="nb-field-head">世界摘要<button type="button" class="brief-btn" :disabled="briefBusy" @click="briefBusy ? cancelBrief() : writeBrief(builderDraft)">{{ briefBusy ? '取消' : '让 AI 写' }}</button></span>
-              <textarea v-model="builderDraft.summary" rows="3" maxlength="400" placeholder="一两句话的简介，会告诉同世界里认识他的角色。可以让 AI 根据设定写。"/>
-              <span v-if="briefError" class="brief-error">{{ briefError }}</span>
-            </label>
           </div>
+
+          <div class="nb-grid">
+            <label class="nb-field"><span>称呼</span><input v-model="builderDraft.gender" maxlength="40"/></label>
+            <label class="nb-field"><span>年龄</span><input v-model="builderDraft.age" maxlength="40" placeholder="二十多岁"/></label>
+            <label class="nb-field nb-field-wide"><span>生日</span><input v-model="builderDraft.birthday" type="date"/></label>
+            <label class="nb-field nb-field-wide"><span>回复语言</span><input v-model="builderDraft.language" maxlength="40" placeholder="例如：日语、英语、粤语（留空则跟随对话）"/></label>
+          </div>
+
+          <section class="nb-block">
+            <div class="nb-block-head">
+              <h2>设定</h2>
+              <button type="button" class="nb-expand" aria-label="放大编辑设定" @click="expandedDetails = true"><Maximize2 :size="15" :stroke-width="1.8" /></button>
+            </div>
+            <textarea v-model="builderDraft.details" rows="9"placeholder="性格、外貌、经历……（详细设定，只给角色自己看）"/>
+          </section>
+
+          <section class="nb-block">
+            <div class="nb-block-head">
+              <h2>世界摘要</h2>
+              <button type="button" class="brief-btn nb-brief-btn" :disabled="briefBusy" @click="briefBusy ? cancelBrief() : writeBrief(builderDraft)">{{ briefBusy ? '取消' : 'AI 生成' }}</button>
+            </div>
+            <p class="nb-hint">同一世界里认识 TA 的角色会看到这段简介，借此了解 TA 的基本情况。</p>
+            <textarea v-model="builderDraft.summary" rows="5"maxlength="400" placeholder="一两句话的简介。可以让 AI 根据设定写。"/>
+            <span v-if="briefError" class="brief-error">{{ briefError }}</span>
+          </section>
+
           <footer class="nb-foot">
-            <span>{{ builderDraft.name.trim() ? '' : '填写姓名后可保存' }}</span>
-            <button type="button" class="nb-save" :disabled="!builderDraft.name.trim()" @click="finishBuilder">保存</button>
+            <span class="nb-foot-hint">{{ builderDraft.name.trim() ? '' : '填写姓名后可保存' }}</span>
+            <button type="button" class="nb-save" :disabled="!builderDraft.name.trim()" @click="finishBuilder"><Check :size="15" :stroke-width="2" />保存</button>
           </footer>
         </div>
       </section>
@@ -777,18 +1232,97 @@ button,input{font:inherit}.masthead{height:57px;flex:none;display:grid;grid-temp
 .wall-zoom button:hover:not(:disabled){background:#f2f2f4}
 .wall-zoom button:disabled{opacity:.35;cursor:default}
 .wall-zoom-reset{min-width:52px !important;font-size:12px !important;font-weight:700 !important;color:#1d1d1f !important;font-variant-numeric:tabular-nums}
-.wall-sticker{position:absolute;width:clamp(118px,23vw,150px);padding:9px 9px 14px;border:0;border-radius:2px;background:#fdfcfa;color:#2b2822;box-shadow:0 1px 2px rgba(60,45,30,.07),0 3px 8px rgba(60,45,30,.08);font:inherit;text-align:center;cursor:grab;user-select:none;touch-action:none;transition:box-shadow .2s}
+/* 顶栏：磨砂玻璃半透明白色，地图切换、贴纸按钮、编辑按钮 */
+.wall-topbar{position:absolute;z-index:6;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;background:rgba(255,255,255,.62);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border-bottom:.5px solid rgba(0,0,0,.08)}
+.wall-map-switch{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px 0 12px;border:0;border-radius:999px;background:rgba(255,255,255,.85);box-shadow:0 1px 2px rgba(0,0,0,.06);color:#1c1c1e;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.wall-map-switch svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.wall-map-name{max-width:160px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wall-topbar-actions{display:flex;align-items:center;gap:8px}
+.wall-top-btn{width:36px;height:36px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 1px 2px rgba(0,0,0,.06);color:#1c1c1e;cursor:pointer}
+.wall-top-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.wall-top-btn:active{transform:scale(.94)}
+.wall-map-menu{position:absolute;top:calc(100% + 6px);left:14px;min-width:200px;margin:0;padding:6px;list-style:none;border-radius:16px;background:rgba(255,255,255,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:0 10px 30px rgba(0,0,0,.14)}
+.wall-map-menu button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:#1c1c1e;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.wall-map-menu button:hover{background:#f2f2f7}
+.wall-map-menu button.on{font-weight:700}
+.wall-map-menu small{font-size:12px;color:#8e8e93}
+
+/* 便利贴 */
+.wall-note{position:absolute;z-index:3;width:clamp(120px,30vw,150px);min-height:96px;padding:12px 12px 10px;box-sizing:border-box;border-radius:4px;color:#2b2822;box-shadow:0 2px 6px rgba(0,0,0,.10),0 6px 14px rgba(0,0,0,.06);cursor:grab;touch-action:none;user-select:none}
+.wall-note:active{cursor:grabbing}
+.wall-note-text{display:block;font-size:14px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap}
+.wall-note-actions{position:absolute;right:4px;bottom:4px;display:flex;gap:2px}
+.wall-note-actions button{width:24px;height:24px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.55);color:#3a3a3c;cursor:pointer}
+.wall-note-actions svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* 贴纸面板与弹窗 */
+.wall-sheet-mask{position:fixed;inset:0;z-index:70;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.22)}
+.wall-sheet-mask-center{align-items:center;padding:24px}
+.wall-sheet{width:min(100%,460px);box-sizing:border-box;padding:16px 18px calc(env(safe-area-inset-bottom) + 18px);border-radius:22px 22px 0 0;background:#fff;color:#1c1c1e;box-shadow:0 -10px 30px rgba(0,0,0,.12)}
+.wall-sheet-small{border-radius:20px;padding:16px 18px 18px}
+.wall-sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.wall-sheet-head strong{font-size:17px;font-weight:600}
+.wall-sheet-head button{width:30px;height:30px;border:0;border-radius:50%;background:#f2f2f7;color:#8e8e93;font-size:20px;line-height:1;cursor:pointer}
+.wall-sheet-input{width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px dashed #c7c7cc;border-radius:14px;background:#f7f7f9;font:inherit;font-size:15px;line-height:1.5;resize:none;outline:0;color:#1c1c1e}
+.wall-sheet-input:focus{border-style:solid;border-color:#1c1c1e;background:#fff}
+.wall-sheet-input-line{width:100%;box-sizing:border-box;height:44px;padding:0 12px;border:1.5px dashed #c7c7cc;border-radius:12px;background:#f7f7f9;font:inherit;font-size:16px;outline:0}
+.wall-sheet-colors{display:flex;gap:10px;margin:12px 0 4px}
+.wall-color{width:30px;height:30px;padding:0;border:2px solid transparent;border-radius:50%;cursor:pointer}
+.wall-color.on{border-color:#1c1c1e}
+.wall-sheet-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.wall-sheet-primary{height:40px;padding:0 20px;border:0;border-radius:999px;background:#1c1c1e;color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.wall-sheet-primary:disabled{opacity:.35;cursor:not-allowed}
+.wall-sheet-hint{margin:10px 0 0;font-size:12px;color:#8e8e93;line-height:1.5}
+
+.wall-sticker{position:absolute;width:clamp(354px,69vw,450px);padding:9px 9px 14px;border:0;border-radius:2px;background:#fdfcfa;color:#2b2822;box-shadow:0 1px 2px rgba(60,45,30,.07),0 3px 8px rgba(60,45,30,.08);font:inherit;text-align:center;cursor:grab;user-select:none;touch-action:none;transition:box-shadow .2s}
 .wall-sticker:hover{box-shadow:0 1px 3px rgba(60,45,30,.09),0 5px 12px rgba(60,45,30,.10)}
 .wall-sticker.dragging{cursor:grabbing;box-shadow:0 2px 4px rgba(60,45,30,.10),0 8px 16px rgba(60,45,30,.12)}
 .wall-sticker:focus-visible{outline:2px solid #2b2822;outline-offset:3px}
 .wall-tape{position:absolute;top:-10px;left:50%;width:58px;height:19px;transform:translateX(-50%) rotate(-4deg);background:rgba(240,232,205,.78);box-shadow:0 1px 1px rgba(0,0,0,.06);clip-path:polygon(0 8%,6% 0,12% 8%,18% 0,100% 0,100% 100%,0 100%)}
 .wall-tape-b{left:auto;right:-14px;top:12px;width:46px;height:16px;transform:rotate(38deg);background:rgba(214,232,238,.8)}
 .wall-no{position:absolute;z-index:1;top:5px;left:7px;font-family:ui-monospace,Menlo,monospace;font-size:8px;letter-spacing:.08em;color:#8e8e93}
-.wall-photo{display:grid;place-items:center;width:100%;aspect-ratio:4/5;overflow:hidden;background:#e9e4dc}
+.wall-photo{position:relative;display:grid;place-items:center;width:100%;aspect-ratio:2/1;overflow:hidden;background:#e9e4dc}
 .wall-photo img{width:100%;height:100%;object-fit:cover;pointer-events:none;filter:saturate(.92) contrast(1.02)}
 .wall-initial{font-family:Georgia,"Songti SC",serif;font-size:36px;color:#9b9180}
 .wall-name{display:block;margin-top:9px;font-family:Georgia,"Songti SC",serif;font-size:13px;letter-spacing:.04em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-@media(max-width:430px){.wall-sticker{width:min(40vw,128px)}}
+@media(max-width:430px){.wall-sticker{width:min(120vw,384px)}}
+/* 角度调整条：贴在底栏上方，白色半透明磨砂 */
+.wall-tilt-bar{position:absolute;z-index:6;left:50%;bottom:calc(env(safe-area-inset-bottom) + 78px);transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:min(calc(100% - 28px),420px);box-sizing:border-box;padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.78);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);box-shadow:0 6px 20px rgba(0,0,0,.10)}
+.wall-tilt-hint{flex:none;font-size:12px;color:#8e8e93;white-space:nowrap}
+.wall-tilt-bar input[type=range]{flex:1;min-width:80px;accent-color:#1c1c1e}
+.wall-tilt-value{flex:none;min-width:38px;text-align:right;font-size:12px;font-weight:600;color:#1c1c1e;font-variant-numeric:tabular-nums}
+.wall-tilt-done{flex:none;height:30px;padding:0 12px;border:0;border-radius:999px;background:#1c1c1e;color:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+/* 点按贴纸时不要浏览器默认的蓝色高亮 */
+.wall-sticker,.wall-note,.wall-photo{-webkit-tap-highlight-color:transparent;outline:none}
+.wall-top-btn.on{background:#1c1c1e;color:#fff}
+/* 贴纸上的触摸手势交给地图画布：划动即平移地图，长按才拖动贴纸，点按打开档案 */
+.wall-sticker{touch-action:none}
+/* 档案桌面：浅灰底、白色纸质档案卡、底部黑色胶囊操作栏。 */
+.wall-page{background:#f2f2f7}
+.wall-board{background:transparent}
+.wall-tape{display:none}
+.wall-sticker{padding:10px 10px 12px;border-radius:6px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.05)}
+.wall-sticker:hover{box-shadow:0 2px 4px rgba(0,0,0,.08),0 8px 18px rgba(0,0,0,.08)}
+.wall-sticker.dragging{box-shadow:0 4px 8px rgba(0,0,0,.10),0 12px 24px rgba(0,0,0,.12)}
+.wall-sticker::after{content:"";display:block;height:14px;margin-top:9px;background:repeating-linear-gradient(90deg,#1c1c1e 0 1.5px,transparent 1.5px 3px,#1c1c1e 3px 4px,transparent 4px 6px,#1c1c1e 6px 8px,transparent 8px 9px)}
+.wall-no{color:#8e8e93;font-size:9px}
+/* 贴纸相片：宽高 2:1，白色纸边，轻微纸张质感，与档案卡一致的小圆角 */
+.wall-photo{width:100%;aspect-ratio:2/1;border-radius:3px;background:#f3f1ec;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05),inset 0 0 0 6px #fff,0 1px 2px rgba(0,0,0,.08)}
+.wall-photo::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:3px;background:linear-gradient(135deg,rgba(255,255,255,.35),rgba(0,0,0,.03));mix-blend-mode:multiply}
+.wall-initial{font-size:32px;color:#8e8e93}
+.wall-name{margin-top:8px;font-size:13px;font-weight:600;color:#1c1c1e;letter-spacing:0}
+.wall-empty{color:#8e8e93}
+/* 底栏：白色半透明磨砂玻璃，贴着屏幕底部。按钮为浅阴影圆形卡片。 */
+.wall-float{left:0;right:0;transform:none;bottom:0;width:100%;box-sizing:border-box;justify-content:center;padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);border:0;border-radius:0;background:rgba(255,255,255,.66);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border-top:.5px solid rgba(0,0,0,.08);box-shadow:none}
+.wall-float>span{color:#1c1c1e}
+.wall-back,.wall-add,.wall-world,.wall-zoom button{width:40px;height:40px;min-width:40px;padding:0;border:0;border-radius:50%;background:#fff;color:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.08),0 2px 8px rgba(0,0,0,.05);cursor:pointer}
+.wall-zoom{gap:8px}
+.wall-zoom-reset{width:auto;min-width:52px;padding:0 10px;border-radius:999px !important;font-size:12px !important;font-weight:700 !important;color:#1c1c1e !important}
+.wall-back:hover,.wall-add:hover,.wall-world:hover,.wall-zoom button:hover:not(:disabled){background:#f7f7f9}
+.wall-back:active,.wall-add:active,.wall-world:active,.wall-zoom button:active:not(:disabled){transform:scale(.94)}
+.wall-add{background:#1c1c1e;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.18)}
+.wall-add:hover{background:#2c2c2e}
+.wall-world{width:auto;min-width:52px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:600}
 /* 角色档案：与新建页同款的小巧加密文件卡片。 */
 .pf-page{position:fixed;inset:0;z-index:42;display:flex;align-items:center;justify-content:center;overflow:auto;box-sizing:border-box;padding:24px;background:#ffffff;color:#1d1d1f}
 .pf-file{width:min(100%,300px);display:flex;flex-direction:column;align-items:stretch;gap:14px;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -833,4 +1367,42 @@ button,input{font:inherit}.masthead{height:57px;flex:none;display:grid;grid-temp
 .poster-danger>button{padding:8px 14px;border:1px solid #e5e5e5;border-radius:999px;background:#fff;font:inherit;font-size:12px;cursor:pointer;color:#3a3a3c}
 .poster-danger>span{color:#8e8e93}
 .poster-danger-confirm{background:#b33a3a !important;border-color:#b33a3a !important;color:#fff !important}
+
+/* 新建角色页：浅灰底、白色档案表，虚线输入框，黑色胶囊按钮。仅作用于 .nb-page。 */
+.nb-page{background:#f2f2f7;color:#1c1c1e;padding:calc(env(safe-area-inset-top) + 52px) 16px calc(env(safe-area-inset-bottom) + 24px);align-items:flex-start}
+.nb-page .nb-close{top:calc(env(safe-area-inset-top) + 12px);left:12px;width:36px;height:36px;display:grid;place-items:center;padding:0;border-radius:50%;background:#fff;color:#1c1c1e;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.nb-page .nb-file{width:min(100%,640px);display:flex;flex-direction:column;gap:14px;padding:16px;box-sizing:border-box;border-radius:20px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.nb-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #e5e5ea}
+.nb-head h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.02em;line-height:1.2}
+.nb-head p{margin:4px 0 0;font-size:12px;color:#8e8e93}
+.nb-id{flex:none;padding:4px 9px;border-radius:999px;background:#1c1c1e;color:#fff;font-size:11px;font-weight:600;letter-spacing:.04em}
+.nb-top{display:flex;gap:14px;align-items:stretch}
+.nb-page .nb-photo{position:relative;flex:none;width:112px;height:140px;display:grid;place-items:center;overflow:hidden;border-radius:14px;border:1.5px dashed #c7c7cc;background:#f7f7f9;cursor:pointer}
+.nb-page .nb-photo img{width:100%;height:100%;object-fit:cover}
+.nb-page .nb-photo-empty{display:flex;flex-direction:column;align-items:center;gap:6px;color:#8e8e93}
+.nb-page .nb-photo-empty small{font-size:12px}
+.nb-page .nb-photo input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.nb-top-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.nb-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.nb-page .nb-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.nb-page .nb-field>span{font-size:12px;color:#8e8e93}
+.nb-page .nb-field input,.nb-page .nb-field select{width:100%;box-sizing:border-box;height:38px;padding:0 10px;border:1.5px dashed #c7c7cc;border-radius:10px;background:#f7f7f9;color:#1c1c1e;font:inherit;font-size:15px;outline:0}
+.nb-page .nb-field input:focus,.nb-page .nb-field select:focus{border-style:solid;border-color:#1c1c1e;background:#fff}
+.nb-page .nb-field input::placeholder,.nb-page .nb-field textarea::placeholder{color:#aeaeb2}
+.nb-page .nb-field-name input{height:44px;font-size:17px;font-weight:600}
+.nb-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.nb-field-wide{grid-column:1 / -1}
+.nb-block{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid #e5e5ea}
+.nb-block-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.nb-block-head h2{margin:0;font-size:14px;font-weight:700}
+.nb-page .nb-expand{width:30px;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:#f2f2f7;color:#1c1c1e;cursor:pointer}
+.nb-page .nb-block textarea{width:100%;box-sizing:border-box;min-height:150px;padding:10px 12px;border:1.5px dashed #c7c7cc;border-radius:12px;background:#f7f7f9;color:#1c1c1e;font:inherit;font-size:15px;line-height:1.6;resize:vertical;outline:0}
+.nb-page .nb-block textarea:focus{border-style:solid;border-color:#1c1c1e;background:#fff}
+.nb-hint{margin:0;font-size:12px;line-height:1.5;color:#8e8e93}
+.nb-page .nb-brief-btn{margin-left:0;padding:6px 12px;font-size:13px;font-weight:600;border-radius:999px;background:#1c1c1e;color:#fff}
+.nb-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:12px;border-top:1px solid #e5e5ea;font-size:13px;color:#8e8e93}
+.nb-foot-hint{min-width:0}
+.nb-page .nb-save{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 20px;border-radius:999px;background:#1c1c1e;color:#fff;font-size:15px;font-weight:600}
+.nb-page .nb-save:disabled{opacity:.35}
+@media(max-width:520px){.nb-top{flex-direction:column;align-items:center}.nb-top-fields{width:100%}.nb-meta{grid-template-columns:1fr}.nb-page .nb-photo{width:128px;height:156px}}
 </style>
